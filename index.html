@@ -448,7 +448,6 @@
         <div class="flex flex-col items-end justify-center pl-1 shrink-0">
           <span id="p1-turn-pill" class="text-[7px] font-extrabold uppercase px-1 py-0.5 rounded text-slate-950 mb-0.5 leading-none" style="background-color: #38bdf8;">Turn</span>
           <div id="p1-score" class="font-display font-extrabold text-xl sm:text-2xl leading-none" style="color: #38bdf8;">0</div>
-          <span id="p1-boxes-unit" class="hidden"></span>
         </div>
       </div>
 
@@ -491,7 +490,6 @@
         <div class="flex flex-col items-end justify-center pl-1 shrink-0">
           <span id="p2-turn-pill" class="invisible text-[7px] font-extrabold uppercase px-1 py-0.5 rounded text-slate-950 mb-0.5 leading-none" style="background-color: #fb923c;">Turn</span>
           <div id="p2-score" class="font-display font-extrabold text-xl sm:text-2xl leading-none" style="color: #fb923c;">0</div>
-          <span id="p2-boxes-unit" class="hidden"></span>
         </div>
       </div>
 
@@ -2914,7 +2912,6 @@
       p1Badge.style.color = c1.css;
       p1Pill.style.backgroundColor = c1.css;
       document.getElementById('p1-score').style.color = c1.css;
-      document.getElementById('p1-boxes-unit').style.color = c1.css;
       document.getElementById('bar-p1').style.backgroundColor = c1.css;
 
       const p2Badge = document.getElementById('btn-p2-badge');
@@ -2925,7 +2922,6 @@
       const diffTranslated = state.aiDifficulty === 'easy' ? (L.easy || diffLabel) : state.aiDifficulty === 'medium' ? (L.medium || diffLabel) : (L.hard || diffLabel);
       document.getElementById('p2-name').textContent = state.vsAI ? `AI (${diffTranslated})` : (L.p2 || 'Player 2');
       document.getElementById('p2-score').style.color = c2.css;
-      document.getElementById('p2-boxes-unit').style.color = c2.css;
       document.getElementById('bar-p2').style.backgroundColor = c2.css;
 
       // Back 1 Move / Undo: Replaces Hint in Online mode (usable once per turn)
@@ -4389,6 +4385,7 @@
               }
             }
           }
+
         } else if (data.type === 'sync-guest-info') {
           // Host receives Guest's custom name
           if (data.p2Name) {
