@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#090d16" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="format-detection" content="telephone=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Dots &amp; Boxes 3D" />
@@ -13,25 +12,7 @@
   <meta name="description" content="3D Dots and Boxes strategy board game with glowing X and O monuments, Easy/Medium/Hard AI, 15 neon line colors, and live online multiplayer." />
   <title>Dots &amp; Boxes 3D — XO Edition</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <script>
-    // iOS: only apply Tailwind hover: styles on devices that really hover (avoids "sticky" hover after a tap)
-    try { tailwind.config = { future: { hoverOnlyWhenSupported: true } }; } catch (e) {}
-    // iOS detection (iPadOS 13+ reports itself as MacIntel) + real visible-viewport height in px
-    (function () {
-      var ua = navigator.userAgent || '';
-      var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      window.IS_IOS = ios;
-      if (ios) document.documentElement.classList.add('is-ios');
-      function setAppH() {
-        var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-        document.documentElement.style.setProperty('--app-h', h + 'px');
-      }
-      window.__setAppH = setAppH;
-      setAppH();
-    })();
-  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script>window.THREE || document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');</script>
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -56,23 +37,12 @@
     html, body {
       width: 100%;
       height: 100%;
+      height: 100dvh;
+      min-height: -webkit-fill-available;
       margin: 0;
       padding: 0;
       overflow: hidden;
       touch-action: manipulation;
-      overscroll-behavior: none;
-      -webkit-text-size-adjust: 100%;
-      text-size-adjust: 100%;
-    }
-    /* Pinned to the *visible* viewport: no 100vh/dvh mismatch under Safari's toolbars, no rubber-band scrolling */
-    body {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: auto;
-      -webkit-touch-callout: none;
     }
     body {
       font-family: 'Inter', sans-serif;
@@ -102,10 +72,8 @@
     .swatch-btn {
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
-    @media (hover: hover) {
-      .swatch-btn:hover:not(:disabled) {
-        transform: scale(1.14);
-      }
+    .swatch-btn:hover:not(:disabled) {
+      transform: scale(1.14);
     }
     #canvas-container {
       position: relative;
@@ -125,10 +93,8 @@
       transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
       touch-action: manipulation;
     }
-    @media (hover: hover) {
-      .btn-control:hover:not(:disabled) {
-        transform: translateY(-1px);
-      }
+    .btn-control:hover:not(:disabled) {
+      transform: translateY(-1px);
     }
     .btn-control:active:not(:disabled) {
       transform: translateY(0px) scale(0.97);
@@ -157,7 +123,7 @@
 
     /* Modal dialog scrollability & overscroll defense */
     .modal-scroll-pane {
-      max-height: calc(var(--app-h, 88vh) - 2rem);
+      max-height: min(88vh, calc(100dvh - 2rem));
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
@@ -222,7 +188,7 @@
         gap: 0.35rem;
       }
       .modal-scroll-pane {
-        max-height: calc(var(--app-h, 84vh) - 1.5rem);
+        max-height: min(84vh, calc(100dvh - 1.5rem));
       }
     }
 
@@ -254,46 +220,9 @@
     #ios-preview-warning {
       display: none;
     }
-
-    /* ===================== iOS / Safari compatibility ===================== */
-    /* iOS Safari will not let you type into fields that have user-select:none */
-    input, textarea, select, [contenteditable] {
-      -webkit-user-select: text;
-      user-select: text;
-      -webkit-touch-callout: default;
-    }
-    canvas {
-      touch-action: none;
-      -webkit-touch-callout: none;
-    }
-    /* Modals that used Tailwind max-h-[92vh] (= large viewport on iOS) now fit the visible area */
-    .max-h-\[92vh\] {
-      max-height: calc(var(--app-h, 100vh) - 2rem) !important;
-    }
-    /* iOS: inputs under 16px make Safari zoom the page on focus */
-    .is-ios input:not([type="range"]),
-    .is-ios textarea,
-    .is-ios select {
-      font-size: 16px !important;
-    }
-    /* iOS has no Android-style nav bar: use the real home-indicator inset instead of 4.5rem */
-    .is-ios .bottom-safe-clearance {
-      padding-bottom: max(0.5rem, calc(var(--sab) + 0.25rem));
-    }
-    /* Landscape iPhones: keep the scoreboard clear of the notch / rounded corners */
-    .is-ios section.w-full {
-      padding-left: max(0.625rem, var(--sal));
-      padding-right: max(0.625rem, var(--sar));
-    }
-    @media (min-width: 640px) {
-      .is-ios section.w-full {
-        padding-left: max(1.5rem, var(--sal));
-        padding-right: max(1.5rem, var(--sar));
-      }
-    }
   </style>
 </head>
-<body class="overflow-hidden flex flex-col justify-between">
+<body class="h-[100dvh] min-h-screen max-h-[100dvh] overflow-hidden flex flex-col justify-between">
 
   <!-- iPhone File-Previewer Notice (Shown only if opened in Apple Files/Messages preview instead of Safari) -->
   <div id="ios-preview-warning" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 px-4 py-2.5 text-xs font-bold text-center shadow-lg z-50 flex items-center justify-center gap-2">
@@ -347,7 +276,7 @@
         <!-- Undo Back Arrow Button (Exclusively Available in Hard AI Mode after Watching Video Ad) -->
         <button id="btn-undo" type="button" disabled class="btn-control hidden px-1.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700/80 disabled:opacity-40 disabled:pointer-events-none border border-slate-700 text-[10px] sm:text-xs font-medium text-slate-200 flex items-center gap-1" title="Undo Last Move (Watch Ad · Hard AI Only)">
           <svg class="w-3 h-3 text-slate-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4-4m-4 4l4 4"/></svg>
-          <span id="lbl-undo" class="hidden md:inline">Undo</span>
+          <span id="lbl-undo" class="inline">Undo</span>
         </button>
 
         <!-- Hint Button (Available across all game sizes & modes, 1x per player by watching an ad) -->
@@ -504,21 +433,16 @@
     <div class="max-w-6xl mx-auto grid grid-cols-12 gap-1.5 sm:gap-2 items-center scoreboard-grid">
 
       <!-- Player 1 (X) Card -->
-      <div id="p1-card" class="col-span-6 sm:col-span-4 glass-panel rounded-xl px-2.5 py-1 transition-all duration-300 p1-glow flex items-center justify-between gap-1.5">
-        <div class="flex items-center gap-1.5 min-w-0 flex-1">
+      <div id="p1-card" class="col-span-6 sm:col-span-4 glass-panel rounded-xl px-2.5 py-1.5 transition-all duration-300 p1-glow flex items-center justify-between gap-1.5">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
           <button id="btn-p1-badge" type="button" title="Change Player 1 Line Color" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-lg flex items-center justify-center font-display font-bold text-sm sm:text-base shadow-inner transition transform hover:scale-105" style="background-color: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.55); color: #38bdf8;">
             X
           </button>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5">
-              <div id="p1-name-label" class="font-display font-bold text-[11px] sm:text-xs text-white truncate leading-tight">Player 1</div>
+          <div class="min-w-0 flex-1 flex flex-col justify-center">
+            <div id="p1-name-label" class="font-display font-bold text-xs sm:text-sm text-white truncate leading-tight">Player 1</div>
+            <div class="mt-0.5 min-h-[14px] flex items-center">
               <span id="p1-online-badge" class="hidden text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none transition"></span>
             </div>
-            <button id="btn-p1-color" type="button" class="text-[10px] flex items-center gap-1 hover:underline text-slate-300 truncate" title="Pick Player 1 Color">
-              <span id="p1-color-dot" class="w-1.5 h-1.5 rounded-full inline-block shrink-0" style="background-color: #38bdf8;"></span>
-              <span id="p1-color-name" class="truncate" style="color: #38bdf8;">Sky Cyan</span>
-              <span class="text-[8px] text-slate-400">▾</span>
-            </button>
           </div>
         </div>
         <div class="flex flex-col items-end justify-center pl-1 shrink-0">
@@ -552,21 +476,16 @@
       </div>
 
       <!-- Player 2 (O) Card -->
-      <div id="p2-card" class="col-span-6 sm:col-span-4 glass-panel rounded-xl px-2.5 py-1 transition-all duration-300 flex items-center justify-between gap-1.5">
-        <div class="flex items-center gap-1.5 min-w-0 flex-1">
+      <div id="p2-card" class="col-span-6 sm:col-span-4 glass-panel rounded-xl px-2.5 py-1.5 transition-all duration-300 flex items-center justify-between gap-1.5">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
           <button id="btn-p2-badge" type="button" title="Change Player 2 Line Color" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-lg flex items-center justify-center font-display font-bold text-sm sm:text-base shadow-inner transition transform hover:scale-105" style="background-color: rgba(251, 146, 60, 0.18); border: 1px solid rgba(251, 146, 60, 0.55); color: #fb923c;">
             O
           </button>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5">
-              <div id="p2-name" class="font-display font-bold text-[11px] sm:text-xs text-white truncate leading-tight">Player 2</div>
+          <div class="min-w-0 flex-1 flex flex-col justify-center">
+            <div id="p2-name" class="font-display font-bold text-xs sm:text-sm text-white truncate leading-tight">Player 2</div>
+            <div class="mt-0.5 min-h-[14px] flex items-center">
               <span id="p2-online-badge" class="hidden text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none transition"></span>
             </div>
-            <button id="btn-p2-color" type="button" class="text-[10px] flex items-center gap-1 hover:underline text-slate-300 truncate" title="Pick Player 2 Color">
-              <span id="p2-color-dot" class="w-1.5 h-1.5 rounded-full inline-block shrink-0" style="background-color: #fb923c;"></span>
-              <span id="p2-subtitle" class="truncate" style="color: #fb923c;">Sunset Amber</span>
-              <span class="text-[8px] text-slate-400">▾</span>
-            </button>
           </div>
         </div>
         <div class="flex flex-col items-end justify-center pl-1 shrink-0">
@@ -723,11 +642,21 @@
       </div>
 
       <!-- Connection Status Banner -->
-      <div id="online-status-box" class="mb-4 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center justify-between gap-2">
+      <div id="online-status-box" class="mb-3 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center justify-between gap-2">
         <span id="online-status-text">Create a room and share the 6-digit code with your friend, or enter their code below.</span>
         <button id="btn-online-disconnect" type="button" class="hidden px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-300 font-semibold shrink-0">
           Disconnect
         </button>
+      </div>
+
+      <!-- Room Host Authority Note (Explains colors & 16, 25, 36 dots size authority) -->
+      <div id="online-host-authority-banner" class="mb-4 p-3 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 shadow-inner">
+        <div class="flex items-center gap-2 text-xs sm:text-sm font-semibold text-indigo-200">
+          <span class="text-base shrink-0">👑</span>
+          <span id="lbl-online-host-note" class="leading-snug">
+            <strong>Room Host (Player 1)</strong> chooses player colors &amp; controls board size (16, 25, 36 Dots). Each player controls their own 3D camera &amp; box zoom.
+          </span>
+        </div>
       </div>
 
       <!-- Brief Connection Tutorial -->
@@ -740,22 +669,22 @@
           <div class="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-start gap-2">
             <span class="w-5 h-5 rounded-full bg-sky-500/20 text-sky-400 font-extrabold flex items-center justify-center shrink-0 text-[10px] border border-sky-400/40">1</span>
             <div>
-              <strong class="text-sky-300 block mb-0.5">Player 1 (Host):</strong>
-              Tap <strong>"Create Room Code"</strong> to generate your unique 6-digit code and share it with your friend.
+              <strong id="online-step1-title" class="text-sky-300 block mb-0.5">Player 1 (Host):</strong>
+              <span id="online-step1-desc">Tap <strong>"Create Room Code"</strong> to generate your unique 6-digit code and share it with your friend.</span>
             </div>
           </div>
           <div class="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-start gap-2">
             <span class="w-5 h-5 rounded-full bg-orange-500/20 text-orange-400 font-extrabold flex items-center justify-center shrink-0 text-[10px] border border-orange-400/40">2</span>
             <div>
-              <strong class="text-orange-300 block mb-0.5">Player 2 (Friend):</strong>
-              Enter the 6-digit code in <strong>"Join Friend"</strong> and tap <strong>"Join Room"</strong>.
+              <strong id="online-step2-title" class="text-orange-300 block mb-0.5">Player 2 (Friend):</strong>
+              <span id="online-step2-desc">Enter the 6-digit code in <strong>"Join Friend"</strong> and tap <strong>"Join Room"</strong>.</span>
             </div>
           </div>
           <div class="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-start gap-2">
             <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-extrabold flex items-center justify-center shrink-0 text-[10px] border border-emerald-400/40">3</span>
             <div>
-              <strong class="text-emerald-300 block mb-0.5">Start Playing:</strong>
-              Once connected for both players, the game automatically takes you to the main page to start!
+              <strong id="online-step3-title" class="text-emerald-300 block mb-0.5">Start Playing:</strong>
+              <span id="online-step3-desc">Once connected for both players, the game automatically takes you to the main page to start!</span>
             </div>
           </div>
         </div>
@@ -1427,34 +1356,14 @@
     const SoundFX = {
       ctx: null,
       muted: false,
-      unlocked: false,
       init() {
         if (!this.ctx) {
           const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (AudioCtx) {
-            try { this.ctx = new AudioCtx(); } catch (e) { this.ctx = null; }
-          }
+          if (AudioCtx) this.ctx = new AudioCtx();
         }
-        // iOS Safari reports 'suspended', and 'interrupted' after a call / app switch
-        if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') {
-          try {
-            const p = this.ctx.resume();
-            if (p && p.catch) p.catch(() => {});
-          } catch (e) {}
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
         }
-      },
-      // iOS only unlocks Web Audio from inside a touchend/click handler: play one silent sample
-      unlock() {
-        this.init();
-        if (!this.ctx || this.unlocked) return;
-        try {
-          const buf = this.ctx.createBuffer(1, 1, 22050);
-          const src = this.ctx.createBufferSource();
-          src.buffer = buf;
-          src.connect(this.ctx.destination);
-          if (src.start) src.start(0); else src.noteOn(0);
-          this.unlocked = true;
-        } catch (e) {}
       },
       playTone(freq, type = 'sine', duration = 0.12, vol = 0.12, delay = 0) {
         if (this.muted) return;
@@ -1554,6 +1463,7 @@
       gameOver: false,
       aiThinking: false,
       hintsUsed: { 1: false, 2: false },
+      onlineUndoUsedThisTurn: false,
       cameraPresetIndex: 0, // 0: 3D Tilt, 1: Isometric, 2: Top-Down
       online: {
         active: false,
@@ -2019,6 +1929,7 @@
       state.aiGameRecorded = false;
       state.matchCountRecorded = false;
       state.hintsUsed = { 1: false, 2: false };
+      state.onlineUndoUsedThisTurn = false;
 
       state.hLines = Array.from({ length: N }, () => Array(N - 1).fill(0));
       state.vLines = Array.from({ length: N - 1 }, () => Array(N).fill(0));
@@ -2079,9 +1990,11 @@
       }
 
       const player = state.currentPlayer;
+      state.onlineUndoUsedThisTurn = false; // Reset 1-time take-back for this move/turn
 
       // Save snapshot for Undo
       state.history.push({
+        movePlayer: player,
         currentPlayer: state.currentPlayer,
         scores: { ...state.scores },
         hLines: state.hLines.map(row => [...row]),
@@ -2151,6 +2064,59 @@
       }
 
       return true;
+    }
+
+    function executeOnlineUndo(role, fromRemote = false) {
+      if (state.history.length === 0) return;
+      const snap = state.history.pop();
+      if (!snap) return;
+
+      state.currentPlayer = role; // Restore turn back to the player who made the accidental move
+      state.scores = { ...snap.scores };
+      state.hLines = snap.hLines;
+      state.vLines = snap.vLines;
+      state.boxes = snap.boxes;
+      state.lastEdge = snap.lastEdge;
+      state.selectedDot = null;
+      state.hintEdge = null;
+      state.gameOver = false;
+      state.onlineUndoUsedThisTurn = true; // Used once in this turn
+
+      // Sync 3D Box tokens
+      const N = state.gridSize;
+      for (let r = 0; r < N - 1; r++) {
+        for (let c = 0; c < N - 1; c++) {
+          const boxOwner = state.boxes[r][c];
+          const obj = boxObjs[r][c];
+          if (boxOwner === 0 && obj.meshGroup) {
+            boardGroup.remove(obj.meshGroup);
+            obj.meshGroup = null;
+          }
+        }
+      }
+
+      SoundFX.dotSelect();
+      updateVisuals();
+      updateHUD();
+      hideVictoryModal();
+
+      const roleSymbol = role === 1 ? 'X' : 'O';
+      const roleLabel = (state.online.active && role === state.online.role) ? 'You' : `Player ${role} (${roleSymbol})`;
+      const toast = document.getElementById('selection-toast');
+      const msgEl = document.getElementById('selection-msg');
+      if (msgEl) {
+        msgEl.textContent = fromRemote
+          ? `↩ ${roleLabel} took back an accidental move (1x used this turn).`
+          : `↩ Accidental move taken back! It is your turn again (${roleSymbol}). (1x used this turn)`;
+      }
+      if (toast) {
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 4000);
+      }
+
+      if (!fromRemote && state.online.active && state.online.conn && state.online.conn.open) {
+        state.online.conn.send({ type: 'online-undo', role });
+      }
     }
 
     function undoLastMove() {
@@ -2383,38 +2349,6 @@
     // =========================================================================
     // ADMOB UNIVERSAL MATCH COUNTER & POST-RESULTS INTERSTITIAL COORDINATOR
     // =========================================================================
-    // =========================================================================
-    // iOS NATIVE BRIDGE (optional WKWebView wrapper) + WEB FALLBACK
-    // A native iOS wrapper exposes ONE script message handler named "dotsNative"
-    // (WKScriptMessageHandler). The page posts {action, ...} to it, and the wrapper
-    // answers by calling the same window.* callbacks the Android build already uses
-    // (onAdMobRewardEarned, onInterstitialProceed, onNoAdsPurchaseResult, ...).
-    // In plain Safari / Home-Screen mode there is no ad SDK, so rewards fall back to a short timer.
-    // =========================================================================
-    const IOS_WEB_REWARD_FALLBACK = true;   // false = Hint/Undo stay locked outside the native app
-    const IOS_WEB_REWARD_SECONDS = 5;
-    const IOSNative = {
-      handler() {
-        try {
-          return (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dotsNative) || null;
-        } catch (e) { return null; }
-      },
-      available() { return !!this.handler(); },
-      post(action, payload) {
-        const h = this.handler();
-        if (!h) return false;
-        try { h.postMessage(Object.assign({ action }, payload || {})); return true; } catch (e) { return false; }
-      },
-      rewardedInterface() {
-        if (!this.available()) return null;
-        return {
-          showRewardedAd: (rewardType, txId) => {
-            if (!this.post('showRewardedAd', { rewardType, txId })) throw new Error('iOS bridge unavailable');
-          }
-        };
-      }
-    };
-
     const AdMobManager = {
       pendingProceedAction: null,
 
@@ -2424,8 +2358,6 @@
         if (native && typeof native.recordMatchCompleted === 'function') {
           try { native.recordMatchCompleted(); } catch (e) {}
         }
-
-        IOSNative.post('recordMatchCompleted');
 
         // 2. Also mirror in persistent local storage
         let count = parseInt(SafeStorage.get('dots3d_completed_matches_count', '0'), 10) || 0;
@@ -2451,11 +2383,6 @@
           } catch (e) {
             this.onInterstitialProceed();
           }
-        } else if (IOSNative.available()) {
-          // iOS native wrapper: it must call window.onInterstitialProceed() when the ad closes
-          IOSNative.post('checkAndShowInterstitial', { placement: 'post_match' });
-          clearTimeout(this._iosProceedTimer);
-          this._iosProceedTimer = setTimeout(() => this.onInterstitialProceed(), 4000);
         } else {
           // Outside Android APK (Web browser preview):
           let count = parseInt(SafeStorage.get('dots3d_completed_matches_count', '0'), 10) || 0;
@@ -2469,7 +2396,6 @@
       },
 
       onInterstitialProceed() {
-        clearTimeout(this._iosProceedTimer);
         if (this.pendingProceedAction) {
           const act = this.pendingProceedAction;
           this.pendingProceedAction = null;
@@ -2492,8 +2418,7 @@
       isNativeAvailable() {
         return Boolean(
           (window.AndroidAdMob && typeof window.AndroidAdMob.showRewardedAd === 'function') ||
-          (window.AndroidApp && typeof window.AndroidApp.showRewardedAd === 'function') ||
-          IOSNative.available()
+          (window.AndroidApp && typeof window.AndroidApp.showRewardedAd === 'function')
         );
       },
 
@@ -2504,8 +2429,6 @@
         if (window.AndroidApp && typeof window.AndroidApp.showRewardedAd === 'function') {
           return window.AndroidApp;
         }
-        const iosIface = IOSNative.rewardedInterface();
-        if (iosIface) return iosIface;
         return null;
       },
 
@@ -2558,8 +2481,6 @@
           } catch (err) {
             this.onAdFailedToShow(rewardType, txId, -1, err.message || 'Error launching ad');
           }
-        } else if (IOS_WEB_REWARD_FALLBACK && window.IS_IOS) {
-          this.runWebRewardFallback(rewardType, txId);
         } else {
           // Running outside the Android APK (e.g. in a desktop web browser)
           if (spinnerSvg) spinnerSvg.classList.add('hidden');
@@ -2577,50 +2498,6 @@
             actionBtn.className = 'w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm cursor-pointer';
           }
         }
-      },
-
-      // iOS Safari / Home-Screen build: no ad SDK available, so unlock the reward after a short timer
-      runWebRewardFallback(rewardType, txId) {
-        const spinnerRow = document.getElementById('ad-status-spinner-row');
-        const spinnerSvg = document.getElementById('ad-status-spinner');
-        const statusLabel = document.getElementById('ad-status-label');
-        const actionBtn = document.getElementById('btn-ad-action');
-        const desc = document.getElementById('ad-sponsor-desc');
-        const badge = document.getElementById('ad-modal-badge');
-        let left = IOS_WEB_REWARD_SECONDS;
-
-        if (badge) badge.textContent = 'Reward Unlock';
-        if (desc) {
-          desc.textContent = rewardType === 'undo'
-            ? 'Your last move will be undone in a moment.'
-            : 'Your tactical hint will unlock in a moment.';
-        }
-        if (spinnerRow) spinnerRow.classList.remove('hidden');
-        if (spinnerSvg) spinnerSvg.classList.remove('hidden');
-        if (actionBtn) {
-          actionBtn.disabled = true;
-          actionBtn.textContent = '⏳ Please wait...';
-          actionBtn.className = 'w-full py-2.5 px-4 rounded-xl bg-slate-800 text-slate-400 font-bold text-xs sm:text-sm cursor-not-allowed';
-        }
-        const render = () => {
-          if (statusLabel) {
-            statusLabel.textContent = `Unlocking in ${left}s...`;
-            statusLabel.className = 'text-xs font-semibold text-amber-300';
-          }
-        };
-        render();
-
-        clearInterval(this._fallbackTimer);
-        this._fallbackTimer = setInterval(() => {
-          left -= 1;
-          if (left <= 0) {
-            clearInterval(this._fallbackTimer);
-            this._fallbackTimer = null;
-            this.onRewardEarned(rewardType, txId, 1, rewardType);
-            return;
-          }
-          render();
-        }, 1000);
       },
 
       openModal(rewardType) {
@@ -2651,12 +2528,6 @@
       },
 
       closeModal() {
-        if (this._fallbackTimer) {
-          // player closed the iOS fallback countdown early: cancel, no reward
-          clearInterval(this._fallbackTimer);
-          this._fallbackTimer = null;
-          this.pendingTx = null;
-        }
         const modal = document.getElementById('rewarded-ad-modal');
         if (modal) {
           modal.classList.add('hidden');
@@ -2788,7 +2659,8 @@
     };
 
     function triggerHint() {
-      if (state.gameOver || state.aiThinking) return;
+      // Hint is completely disabled and removed in online multiplayer
+      if (state.gameOver || state.aiThinking || state.online.active) return;
       const curP = state.currentPlayer;
       if (state.hintsUsed && state.hintsUsed[curP]) {
         const msgEl = document.getElementById('selection-msg');
@@ -3041,9 +2913,6 @@
       p1Badge.style.borderColor = `rgba(${c1.rgb}, 0.6)`;
       p1Badge.style.color = c1.css;
       p1Pill.style.backgroundColor = c1.css;
-      document.getElementById('p1-color-dot').style.backgroundColor = c1.css;
-      document.getElementById('p1-color-name').textContent = c1.name;
-      document.getElementById('p1-color-name').style.color = c1.css;
       document.getElementById('p1-score').style.color = c1.css;
       document.getElementById('p1-boxes-unit').style.color = c1.css;
       document.getElementById('bar-p1').style.backgroundColor = c1.css;
@@ -3053,57 +2922,92 @@
       p2Badge.style.borderColor = `rgba(${c2.rgb}, 0.6)`;
       p2Badge.style.color = c2.css;
       p2Pill.style.backgroundColor = c2.css;
-      document.getElementById('p2-color-dot').style.backgroundColor = c2.css;
       const diffTranslated = state.aiDifficulty === 'easy' ? (L.easy || diffLabel) : state.aiDifficulty === 'medium' ? (L.medium || diffLabel) : (L.hard || diffLabel);
       document.getElementById('p2-name').textContent = state.vsAI ? `AI (${diffTranslated})` : (L.p2 || 'Player 2');
-      document.getElementById('p2-subtitle').textContent = c2.name;
-      document.getElementById('p2-subtitle').style.color = c2.css;
       document.getElementById('p2-score').style.color = c2.css;
       document.getElementById('p2-boxes-unit').style.color = c2.css;
       document.getElementById('bar-p2').style.backgroundColor = c2.css;
 
-      // Undo back arrow: Available ONLY against AI on Hard mode (requires watching rewarded ad)
+      // Back 1 Move / Undo: Replaces Hint in Online mode (usable once per turn)
       const undoBtn = document.getElementById('btn-undo');
       if (undoBtn) {
-        const isHardAI = Boolean(state.vsAI && state.aiDifficulty === 'hard');
-        if (isHardAI) {
+        if (state.online.active) {
           undoBtn.classList.remove('hidden');
-          undoBtn.disabled = state.history.length === 0 || state.aiThinking;
-          undoBtn.title = 'Undo Last Move (Watch Ad · Hard AI Only)';
+          const myRole = state.online.role;
+          const hasUsedThisTurn = Boolean(state.onlineUndoUsedThisTurn);
+          const hasHistory = state.history.length > 0;
+          const lastMove = hasHistory ? state.history[state.history.length - 1] : null;
+          // Can undo if this player made the move and has not used their 1-time undo for this turn
+          const canUndoAccidental = !hasUsedThisTurn && lastMove && lastMove.movePlayer === myRole && !state.gameOver;
+          undoBtn.disabled = !canUndoAccidental;
+          undoBtn.innerHTML = '<span class="text-xs">↩</span> <span id="lbl-undo">' + (hasUsedThisTurn ? 'Back 1 Move (Used)' : 'Back 1 Move') + '</span>';
+          undoBtn.title = hasUsedThisTurn
+            ? 'Back 1 Move already used for this turn (available once per turn)'
+            : (canUndoAccidental
+                ? 'Take back your accidental move (available once per turn)'
+                : 'Back 1 Move (Available on your turn after making a move)');
+          undoBtn.className = canUndoAccidental
+            ? 'btn-control px-2.5 py-1 rounded-lg bg-sky-500/25 hover:bg-sky-500/35 border border-sky-400/60 text-xs font-bold text-sky-200 flex items-center gap-1.5 shadow-sm transition'
+            : 'btn-control px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs font-medium text-slate-400 flex items-center gap-1.5 opacity-50 cursor-not-allowed';
         } else {
-          undoBtn.classList.add('hidden');
-          undoBtn.disabled = true;
+          const isHardAI = Boolean(state.vsAI && state.aiDifficulty === 'hard');
+          if (isHardAI) {
+            undoBtn.classList.remove('hidden');
+            undoBtn.disabled = state.history.length === 0 || state.aiThinking;
+            undoBtn.title = 'Undo Last Move (Watch Ad · Hard AI Only)';
+            const undoLbl = document.getElementById('lbl-undo');
+            if (undoLbl) undoLbl.textContent = 'Undo';
+            undoBtn.className = 'btn-control px-1.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700/80 disabled:opacity-40 border border-slate-700 text-[10px] sm:text-xs font-medium text-slate-200 flex items-center gap-1';
+          } else {
+            undoBtn.classList.add('hidden');
+            undoBtn.disabled = true;
+          }
         }
       }
-      // Hint option: available on all game sizes and modes (1x per player by watching a video ad)
+      // Hint option: completely removed only when playing online
       const hintBtn = document.getElementById('btn-hint');
       if (hintBtn) {
-        hintBtn.classList.remove('hidden');
-        const curP = state.currentPlayer;
-        const usedByCurrent = Boolean(state.hintsUsed && state.hintsUsed[curP]);
-        if (usedByCurrent) {
+        if (state.online.active) {
+          hintBtn.classList.add('hidden');
           hintBtn.disabled = true;
-          hintBtn.title = `Player ${curP} has already used their hint for this game (1 hint per player limit)`;
-          document.getElementById('lbl-hint').textContent = `${L.hint || 'Hint'} (Used)`;
-          hintBtn.className = 'btn-control px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs font-medium text-slate-400 flex items-center gap-1.5 opacity-50 cursor-not-allowed';
         } else {
-          const canClick = !state.gameOver && !state.aiThinking && !(state.vsAI && curP === 2) && (!state.online.active || curP === state.online.role);
-          hintBtn.disabled = !canClick;
-          const pLabel = curP === 1 ? (state.p1CustomName || L.p1 || 'Player 1') : (state.vsAI ? 'AI' : (L.p2 || 'Player 2'));
-          hintBtn.title = `${L.hint || 'Hint'} (${pLabel}): Watch a video ad to unlock 1 tactical hint`;
-          document.getElementById('lbl-hint').textContent = L.hint || 'Hint';
-          hintBtn.className = 'btn-control px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 border border-amber-400/60 text-xs font-bold text-amber-300 flex items-center gap-1.5 shadow-sm';
+          hintBtn.classList.remove('hidden');
+          const curP = state.currentPlayer;
+          const usedByCurrent = Boolean(state.hintsUsed && state.hintsUsed[curP]);
+          if (usedByCurrent) {
+            hintBtn.disabled = true;
+            hintBtn.title = `Player ${curP} has already used their hint for this game (1 hint per player limit)`;
+            document.getElementById('lbl-hint').textContent = `${L.hint || 'Hint'} (Used)`;
+            hintBtn.className = 'btn-control px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs font-medium text-slate-400 flex items-center gap-1.5 opacity-50 cursor-not-allowed';
+          } else {
+            const canClick = !state.gameOver && !state.aiThinking && !(state.vsAI && curP === 2);
+            hintBtn.disabled = !canClick;
+            const pLabel = curP === 1 ? (state.p1CustomName || L.p1 || 'Player 1') : (state.vsAI ? 'AI' : (L.p2 || 'Player 2'));
+            hintBtn.title = `${L.hint || 'Hint'} (${pLabel}): Watch a video ad to unlock 1 tactical hint`;
+            document.getElementById('lbl-hint').textContent = L.hint || 'Hint';
+            hintBtn.className = 'btn-control px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 border border-amber-400/60 text-xs font-bold text-amber-300 flex items-center gap-1.5 shadow-sm';
+          }
         }
       }
 
+      const myRole = state.online.role;
       const customP1Name = (state.p1CustomName || '').trim();
-      const displayP1Name = customP1Name || (L.p1 || 'Player 1');
+      const customP2Name = (state.p2CustomName || '').trim();
+      const p1Raw = customP1Name || (L.p1 || 'Player 1');
+      const p2Raw = customP2Name || (state.vsAI ? `AI (${diffTranslated})` : (L.p2 || 'Player 2'));
 
       if (state.online.active) {
-        document.getElementById('p1-name-label').textContent = state.online.role === 1 ? (customP1Name || 'You (P1)') : 'Friend (P1)';
-        document.getElementById('p2-name').textContent = state.online.role === 2 ? (customP1Name || 'You (P2)') : 'Friend (P2)';
+        const p1El = document.getElementById('p1-name-label');
+        if (p1El) p1El.textContent = p1Raw;
+
+        const p2El = document.getElementById('p2-name');
+        if (p2El) p2El.textContent = p2Raw;
       } else {
-        document.getElementById('p1-name-label').textContent = displayP1Name;
+        const p1El = document.getElementById('p1-name-label');
+        if (p1El) p1El.textContent = p1Raw;
+
+        const p2El = document.getElementById('p2-name');
+        if (p2El) p2El.textContent = state.vsAI ? `AI (${diffTranslated})` : (L.p2 || 'Player 2');
       }
 
       if (state.currentPlayer === 1) {
@@ -3114,7 +3018,7 @@
         turnDot.style.backgroundColor = c1.css;
         turnBanner.style.borderColor = `rgba(${c1.rgb}, 0.45)`;
         turnText.textContent = state.online.active
-          ? (state.online.role === 1 ? "Your Turn (X) — Draw a Line!" : "Waiting for Friend (Player 1)...")
+          ? (myRole === 1 ? `Your Turn (${p1Raw}) — Draw a Line!` : `${p1Raw}'s Turn (X) — Waiting for move...`)
           : (customP1Name ? `${customP1Name} (X) — ${L.turn || 'Turn'}` : (L.p1Turn || "Player 1's Turn (X) — Draw a Line"));
         selInd.style.backgroundColor = c1.css;
       } else {
@@ -3125,7 +3029,7 @@
         turnDot.style.backgroundColor = c2.css;
         turnBanner.style.borderColor = `rgba(${c2.rgb}, 0.45)`;
         turnText.textContent = state.online.active
-          ? (state.online.role === 2 ? "Your Turn (O) — Draw a Line!" : "Waiting for Friend (Player 2)...")
+          ? (myRole === 2 ? `Your Turn (${p2Raw}) — Draw a Line!` : `${p2Raw}'s Turn (O) — Waiting for move...`)
           : state.vsAI ? (L.aiThinking || `AI (${diffLabel}) is thinking...`) : (L.p2Turn || "Player 2's Turn (O) — Draw a Line");
         selInd.style.backgroundColor = c2.css;
       }
@@ -3333,9 +3237,6 @@
         return;
       }
 
-      // Touch has no hover: skipping this avoids a stuck "preview beam" after the finger lifts
-      if (e.pointerType === 'touch') return;
-
       const rect = canvas.getBoundingClientRect();
       if (
         e.clientX < rect.left ||
@@ -3391,40 +3292,74 @@
       }
     });
 
-    const endPointerInteraction = e => {
+    window.addEventListener('pointerup', () => {
       isOrbiting = false;
-      if (e && e.pointerType === 'touch' && state.hoveredEdge) {
-        state.hoveredEdge = null;
-        updateVisuals();
-      }
-    };
-    window.addEventListener('pointerup', endPointerInteraction);
-    window.addEventListener('pointercancel', endPointerInteraction);
+    });
 
     // =========================================================================
     // UI BUTTON LISTENERS
     // =========================================================================
+    function showHostControlNotice(msg) {
+      const toast = document.getElementById('selection-toast');
+      const msgEl = document.getElementById('selection-msg');
+      if (msgEl) msgEl.textContent = `🔒 ${msg}`;
+      if (toast) {
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 3500);
+      }
+      SoundFX.dotSelect();
+    }
+
+    function setGridButtonActive(size) {
+      document.querySelectorAll('.grid-btn').forEach(b => {
+        const bSize = parseInt(b.getAttribute('data-size'), 10);
+        b.className = bSize === size
+          ? 'grid-btn px-1.5 py-0.5 rounded-lg font-semibold bg-sky-500 text-slate-950 shadow transition text-[10px]'
+          : 'grid-btn px-1.5 py-0.5 rounded-lg font-medium text-slate-400 hover:text-white transition text-[10px]';
+      });
+    }
+
     document.querySelectorAll('.grid-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        // When online, only Room Host (Player 1) controls board size
+        if (state.online.active && state.online.role === 2) {
+          showHostControlNotice('Board size is controlled by Room Host (Player 1).');
+          return;
+        }
         const size = parseInt(btn.getAttribute('data-size'), 10);
-        document.querySelectorAll('.grid-btn').forEach(b => {
-          b.className = 'grid-btn px-1.5 py-0.5 rounded-lg font-medium text-slate-400 hover:text-white transition text-[10px]';
-        });
-        btn.className = 'grid-btn px-1.5 py-0.5 rounded-lg font-semibold bg-sky-500 text-slate-950 shadow transition text-[10px]';
+        setGridButtonActive(size);
         SoundFX.dotSelect();
         initGame(size);
+        // Automatically sync new board size and configuration to Guest (Player 2)
+        if (state.online.active && state.online.role === 1 && state.online.conn && state.online.conn.open) {
+          state.online.conn.send({
+            type: 'sync-board-config',
+            gridSize: size,
+            boardScale: Math.round(state.boardScale * 100),
+            p1ColorIdx: state.p1ColorIdx,
+            p2ColorIdx: state.p2ColorIdx
+          });
+        }
       });
     });
 
     const btnPvp = document.getElementById('mode-pvp');
     const btnAi = document.getElementById('mode-ai');
     btnPvp.addEventListener('click', () => {
+      // Disconnect online session if switching to Local 2-Player mode
+      if (state.online.active) {
+        disconnectOnline(false);
+      }
       state.vsAI = false;
       syncModeAndAIDiffUI();
       SoundFX.dotSelect();
       initGame(state.gridSize);
     });
     btnAi.addEventListener('click', () => {
+      // Disconnect online session if switching to vs AI mode
+      if (state.online.active) {
+        disconnectOnline(false);
+      }
       state.vsAI = true;
       syncModeAndAIDiffUI();
       SoundFX.dotSelect();
@@ -3454,7 +3389,7 @@
     });
 
     // 15-Color Picker Setup & Handlers
-    function applyPlayerColors() {
+    function applyPlayerColors(syncToRemote = true) {
       const c1 = COLOR_PALETTE[state.p1ColorIdx];
       const c2 = COLOR_PALETTE[state.p2ColorIdx];
       COLORS.p1Hex = c1.hex;
@@ -3470,7 +3405,7 @@
       renderColorSwatches();
       updateVisuals();
       updateHUD();
-      if (state.online.active && state.online.conn && state.online.conn.open) {
+      if (syncToRemote && state.online.active && state.online.role === 1 && state.online.conn && state.online.conn.open) {
         state.online.conn.send({
           type: 'color',
           p1ColorIdx: state.p1ColorIdx,
@@ -3482,6 +3417,14 @@
     function renderColorSwatches() {
       const p1Container = document.getElementById('p1-swatches');
       const p2Container = document.getElementById('p2-swatches');
+      const subEl = document.getElementById('color-modal-sub');
+      if (subEl) {
+        if (state.online.active && state.online.role === 2) {
+          subEl.innerHTML = '<span class="text-amber-300 font-semibold">🔒 Room Host (Player 1) chooses player colors for both players.</span>';
+        } else {
+          subEl.textContent = 'Select any of the 15 vibrant 3D neon colors for Player 1 (X) and Player 2 / AI (O)';
+        }
+      }
       const c1 = COLOR_PALETTE[state.p1ColorIdx];
       const c2 = COLOR_PALETTE[state.p2ColorIdx];
 
@@ -3514,6 +3457,10 @@
           ? '<span class="text-[10px] font-bold text-slate-950">O</span>'
           : '';
         b1.addEventListener('click', () => {
+          if (state.online.active && state.online.role === 2) {
+            showHostControlNotice('Player colors are chosen by Room Host (Player 1).');
+            return;
+          }
           if (idx === state.p2ColorIdx) return;
           state.p1ColorIdx = idx;
           SoundFX.dotSelect();
@@ -3538,6 +3485,10 @@
           ? '<span class="text-[10px] font-bold text-slate-950">X</span>'
           : '';
         b2.addEventListener('click', () => {
+          if (state.online.active && state.online.role === 2) {
+            showHostControlNotice('Player colors are chosen by Room Host (Player 1).');
+            return;
+          }
           if (idx === state.p1ColorIdx) return;
           state.p2ColorIdx = idx;
           SoundFX.dotSelect();
@@ -3558,8 +3509,27 @@
     };
 
     document.getElementById('btn-colors').addEventListener('click', openColorModal);
-    document.getElementById('btn-p1-color').addEventListener('click', openColorModal);
-    document.getElementById('btn-p2-color').addEventListener('click', openColorModal);
+
+        // Direct tap-to-edit name on scoreboard cards (opens in-page settings input)
+    document.getElementById('p1-name-label').addEventListener('click', () => {
+      if (state.online.active && state.online.role !== 1) return;
+      openSettingsPanel();
+      const input = document.getElementById('player1-name-input');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+
+    document.getElementById('p2-name').addEventListener('click', () => {
+      if (state.online.active && state.online.role !== 2) return;
+      openSettingsPanel();
+      const input = document.getElementById('player1-name-input');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
     document.getElementById('btn-p1-badge').addEventListener('click', openColorModal);
     document.getElementById('btn-p2-badge').addEventListener('click', openColorModal);
     document.getElementById('color-close-top').addEventListener('click', closeColorModal);
@@ -3641,6 +3611,30 @@
       SoundFX.dotSelect();
     }
 
+    window.handleAndroidBackButton = function() {
+      // 1. Check if any popup modal is open
+      const allModals = [
+        'achievements-modal', 'rules-modal', 'share-modal', 'rate-modal',
+        'no-ads-modal', 'color-modal', 'online-modal', 'feedback-modal', 'tutorial-banner', 'victory-modal'
+      ];
+      for (const mid of allModals) {
+        const el = document.getElementById(mid);
+        if (el && !el.classList.contains('hidden')) {
+          navigateBack();
+          return true; // Successfully consumed back action (went back one page)
+        }
+      }
+
+      // 2. Check if top settings panel drawer is open
+      if (settingsPanel && !settingsPanel.classList.contains('hidden')) {
+        closeSettingsPanel();
+        return true; // Successfully closed settings panel
+      }
+
+      // 3. User is on main game board
+      return false;
+    };
+
     function navigateBack() {
       SoundFX.dotSelect();
 
@@ -3681,6 +3675,7 @@
     // Adjustable Box Size / Scale Controls
     const sizeSlider = document.getElementById('board-size-slider');
     const sizeLabel = document.getElementById('board-size-label');
+    // Box size, center 3D, 3D tilt and top-down are controlled by each player individually on their own phone
     function updateBoardScale(newPct) {
       const clamped = Math.max(60, Math.min(145, newPct));
       state.boardScale = clamped / 100;
@@ -3741,7 +3736,18 @@
     });
 
     document.getElementById('btn-undo').addEventListener('click', () => {
-      if (state.history.length === 0 || state.aiThinking) return;
+      if (state.history.length === 0 || state.aiThinking || state.gameOver) return;
+
+      // Online accidental move undo (1 time in each turn)
+      if (state.online.active) {
+        const myRole = state.online.role;
+        if (state.onlineUndoUsedThisTurn) return;
+        const lastMove = state.history[state.history.length - 1];
+        if (!lastMove || lastMove.movePlayer !== myRole) return;
+        executeOnlineUndo(myRole, false);
+        return;
+      }
+
       // Undo back arrow is exclusively available against Hard AI
       if (!state.vsAI || state.aiDifficulty !== 'hard') return;
       AdMobBridge.startAdFlow('undo');
@@ -3763,6 +3769,12 @@
       }
     });
     document.getElementById('btn-restart').addEventListener('click', () => {
+      // When online, only Room Host (Player 1) can restart the match
+      if (state.online.active && state.online.role === 2) {
+        showHostControlNotice('Only Room Host (Player 1) can restart the board.');
+        return;
+      }
+
       if (state.gameOver) {
         AdMobManager.handlePostMatchProceed(() => {
           SoundFX.dotSelect();
@@ -3945,7 +3957,6 @@
     // RESIZE & ANIMATION LOOP
     // =========================================================================
     function handleResize() {
-      if (window.__setAppH) window.__setAppH();
       const w = container.clientWidth;
       const h = container.clientHeight;
       if (w === 0 || h === 0) return;
@@ -3981,12 +3992,9 @@
       }
     });
 
+    // Safe pagehide: do not kill active online room during mobile screen sleep or app switching
     window.addEventListener('pagehide', () => {
-      if (state.online.active && state.online.conn && state.online.conn.open) {
-        try {
-          state.online.conn.send({ type: 'peer-leave', role: state.online.role });
-        } catch (e) {}
-      }
+      // Kept empty to prevent false disconnects on mobile screen lock or tab switching
     });
 
     window.addEventListener('resize', handleResize);
@@ -4082,14 +4090,10 @@
     function fallbackCopy(text, callback) {
       const ta = document.createElement('textarea');
       ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;-webkit-user-select:text;user-select:text;';
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
       document.body.appendChild(ta);
-      try {
-        ta.focus({ preventScroll: true });
-        ta.select();
-        ta.setSelectionRange(0, text.length); // iOS Safari ignores select() on its own
-      } catch (err) {}
+      ta.select();
       try { document.execCommand('copy'); } catch (err) {}
       document.body.removeChild(ta);
       if (callback) callback();
@@ -4123,12 +4127,12 @@
       nl: 'Terug', th: 'ย้อนกลับ', ms: 'Kembali', tl: 'Bumalik', ro: 'Înapoi', el: 'Πίσω'
     };
     const ONLINE_I18N = {
-      en: { online: '(Online)', offline: '(Offline)', toast: 'Opponent went offline (disconnected or closed app)' },
-      es: { online: '(En línea)', offline: '(Desconectado)', toast: 'El oponente se desconectó (perdió conexión o cerró la app)' },
-      zh: { online: '(在线)', offline: '(离线)', toast: '对手已离线（已断开连接或关闭应用）' },
-      hi: { online: '(ऑनलाइन)', offline: '(ऑफ़लाइन)', toast: 'खिलाड़ी ऑफ़लाइन हो गया (कनेक्शन कट गया या ऐप बंद कर दिया)' },
-      ar: { online: '(متصل)', offline: '(غير متصل)', toast: 'خرج الخصم من الاتصال (انقطع الاتصال أو أغلقت اللعبة)' },
-      fr: { online: '(En ligne)', offline: '(Hors ligne)', toast: 'L’adversaire s’est déconnecté (connexion perdue ou appli fermée)' },
+      en: { online: '(Online)', offline: '(Offline)', away: '(In Background)', toast: 'Opponent went offline (disconnected or closed app)' },
+      es: { online: '(En línea)', offline: '(Desconectado)', away: '(En segundo plano)', toast: 'El oponente se desconectó (perdió conexión o cerró la app)' },
+      zh: { online: '(在线)', offline: '(离线)', away: '(后台运行中)', toast: '对手已离线（已断开连接或关闭应用）' },
+      hi: { online: '(ऑनलाइन)', offline: '(ऑफ़लाइन)', away: '(बैकग्राउंड में)', toast: 'खिलाड़ी ऑफ़लाइन हो गया (कनेक्शन कट गया या ऐप बंद कर दिया)' },
+      ar: { online: '(متصل)', offline: '(غير متصل)', away: '(في الخلفية)', toast: 'خرج الخصم من الاتصال (انقطع الاتصال أو أغلقت اللعبة)' },
+      fr: { online: '(En ligne)', offline: '(Hors ligne)', away: '(En arrière-plan)', toast: 'L’adversaire s’est déconnecté (connexion perdue ou appli fermée)' },
       bn: { online: '(অনলাইন)', offline: '(অফলাইন)', toast: 'প্রতিপক্ষ অফলাইন হয়ে গেছে (সংযোগ বিচ্ছিন্ন বা অ্যাপ বন্ধ)' },
       pt: { online: '(Online)', offline: '(Offline)', toast: 'O adversário ficou offline (conexão perdida ou fechou o app)' },
       ru: { online: '(В сети)', offline: '(Не в сети)', toast: 'Соперник отключился (нет связи или приложение закрыто)' },
@@ -4157,6 +4161,20 @@
     let onlineHeartbeatTimer = null;
     let lastRemoteHeartbeatTime = 0;
 
+    function renderSinglePlayerBadge(badgeEl, status, onTag, offTag, awayTag = '(In Background)') {
+      if (!badgeEl) return;
+      if (status === 'background' || status === 'reconnecting') {
+        badgeEl.className = 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40';
+        badgeEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span><span>${awayTag}</span>`;
+      } else if (status === true) {
+        badgeEl.className = 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40';
+        badgeEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>${onTag}</span>`;
+      } else {
+        badgeEl.className = 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/40';
+        badgeEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span>${offTag}</span>`;
+      }
+    }
+
     function updatePlayerOnlineBadges(p1Online, p2Online, customToastMsg = '') {
       const p1Badge = document.getElementById('p1-online-badge');
       const p2Badge = document.getElementById('p2-online-badge');
@@ -4173,24 +4191,10 @@
       const O_I18N = ONLINE_I18N[state.lang] || ONLINE_I18N.en;
       const onTag = O_I18N.online;
       const offTag = O_I18N.offline;
+      const awayTag = O_I18N.away || '(In Background)';
 
-      if (p1Badge) {
-        p1Badge.className = p1Online
-          ? 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-          : 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/40';
-        p1Badge.innerHTML = p1Online
-          ? `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>${onTag}</span>`
-          : `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span>${offTag}</span>`;
-      }
-
-      if (p2Badge) {
-        p2Badge.className = p2Online
-          ? 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-          : 'inline-flex items-center gap-1 text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-400/40';
-        p2Badge.innerHTML = p2Online
-          ? `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>${onTag}</span>`
-          : `<span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span><span>${offTag}</span>`;
-      }
+      renderSinglePlayerBadge(p1Badge, p1Online, onTag, offTag, awayTag);
+      renderSinglePlayerBadge(p2Badge, p2Online, onTag, offTag, awayTag);
 
       if (customToastMsg && toast && toastMsg) {
         toastMsg.textContent = customToastMsg;
@@ -4198,7 +4202,7 @@
         toast.classList.add('flex');
         setTimeout(() => {
           if (toast) toast.classList.add('hidden');
-        }, 6000);
+        }, 5000);
       } else if (!customToastMsg && toast) {
         toast.classList.add('hidden');
       }
@@ -4220,24 +4224,30 @@
           return;
         }
 
-        // Send heartbeat ping
+        // Send periodic heartbeat ping
         try {
           state.online.conn.send({ type: 'heartbeat-ping', time: Date.now() });
         } catch (e) {}
 
-        // Check if remote peer hasn't responded in over 5.5 seconds (app closed or lost internet)
-        if (Date.now() - lastRemoteHeartbeatTime > 5500) {
+        const elapsedSincePing = Date.now() - lastRemoteHeartbeatTime;
+
+        // If friend switched to a different app on their phone, keep connection alive!
+        // Display "In Background" indicator while waiting for them to return without disconnecting
+        if (elapsedSincePing > 6000) {
+          const remoteRole = state.online.role === 1 ? 2 : 1;
           const O_I18N = ONLINE_I18N[state.lang] || ONLINE_I18N.en;
-          const toastMsg = O_I18N.toast;
-          
+          const awayLabel = O_I18N.away || '(In Background)';
           if (state.online.role === 1) {
-            updatePlayerOnlineBadges(true, false, toastMsg);
+            updatePlayerOnlineBadges(true, 'background', `Friend is in another app (${awayLabel}) — connection stays live!`);
           } else {
-            updatePlayerOnlineBadges(false, true, toastMsg);
+            updatePlayerOnlineBadges('background', true, `Friend is in another app (${awayLabel}) — connection stays live!`);
           }
-          onlineStatusText.textContent = `${toastMsg}. Waiting for friend to reconnect or return...`;
+          // Do NOT disconnect! Channel remains ready for when they switch back.
+        } else {
+          // Healthy active connection
+          updatePlayerOnlineBadges(true, true);
         }
-      }, 2500);
+      }, 3000);
     }
 
     function disconnectOnline(peerDisconnected = false, remoteRoleNumber = null) {
@@ -4296,7 +4306,7 @@
         onlineStatusText.textContent = `Connected live in Room ${roomCode}! You are Player ${role} (${role === 1 ? 'X' : 'O'}). Both players online!`;
         SoundFX.hint();
 
-        // Both players are now active and playing online: show (Online) next to both names
+        // Both players are now active and playing online: show (Online) under both names
         updatePlayerOnlineBadges(true, true);
         startOnlineHeartbeat();
 
@@ -4306,7 +4316,8 @@
             type: 'sync-init',
             gridSize: state.gridSize,
             p1ColorIdx: state.p1ColorIdx,
-            p2ColorIdx: state.p2ColorIdx
+            p2ColorIdx: state.p2ColorIdx,
+            p1Name: (state.p1CustomName || '').trim() || 'Player 1'
           });
         }
         updateHUD();
@@ -4334,21 +4345,74 @@
 
         if (data.type === 'heartbeat-ping') {
           try { conn.send({ type: 'heartbeat-pong', time: Date.now() }); } catch (e) {}
-        } else if (data.type === 'heartbeat-pong') {
+        } else if (data.type === 'heartbeat-pong' || data.type === 'peer-resume') {
           lastRemoteHeartbeatTime = Date.now();
+          updatePlayerOnlineBadges(true, true);
         } else if (data.type === 'peer-leave') {
           disconnectOnline(true, remoteRole);
-        } else if (data.type === 'sync-init') {
-          // Only accept sync-init if we are Guest (role 2) from Host (role 1)
+        } else if (data.type === 'sync-init' || data.type === 'sync-board-config') {
+          // Guest receives full board configuration from Room Host (Player 1)
           if (role === 2) {
             const validSizes = [4, 5, 6];
             const gSize = validSizes.includes(data.gridSize) ? data.gridSize : 5;
             const maxColor = COLOR_PALETTE.length - 1;
-            state.p1ColorIdx = (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) ? data.p1ColorIdx : 0;
-            state.p2ColorIdx = (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) ? data.p2ColorIdx : 1;
-            applyPlayerColors();
+            if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
+              state.p1ColorIdx = data.p1ColorIdx;
+            }
+            if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
+              state.p2ColorIdx = data.p2ColorIdx;
+            }
+            if (data.p1Name) {
+              state.p1CustomName = data.p1Name;
+            }
+            applyPlayerColors(false);
+            setGridButtonActive(gSize);
             initGame(gSize);
+
+            // Guest sends their custom name back to Host
+            if (data.type === 'sync-init') {
+              const myGuestName = (state.p2CustomName || state.p1CustomName || '').trim() || 'Player 2';
+              state.p2CustomName = myGuestName;
+              conn.send({
+                type: 'sync-guest-info',
+                p2Name: myGuestName
+              });
+            }
+
+            if (data.type === 'sync-board-config') {
+              const toast = document.getElementById('selection-toast');
+              const msgEl = document.getElementById('selection-msg');
+              if (msgEl) msgEl.textContent = `⚙️ Room Host updated board to ${gSize * gSize} Dots & synced page settings!`;
+              if (toast) {
+                toast.classList.remove('hidden');
+                setTimeout(() => toast.classList.add('hidden'), 3500);
+              }
+            }
           }
+        } else if (data.type === 'sync-guest-info') {
+          // Host receives Guest's custom name
+          if (data.p2Name) {
+            state.p2CustomName = data.p2Name;
+            updateHUD();
+          }
+        } else if (data.type === 'player-name') {
+          // Live name change broadcast
+          if (data.role === 1 && data.name) {
+            state.p1CustomName = data.name;
+          } else if (data.role === 2 && data.name) {
+            state.p2CustomName = data.name;
+          }
+          updateHUD();
+          const toast = document.getElementById('selection-toast');
+          const msgEl = document.getElementById('selection-msg');
+          if (msgEl) msgEl.textContent = `✏️ ${data.name} updated their player name!`;
+          if (toast) {
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3500);
+          }
+        } else if (data.type === 'online-undo') {
+          // Remote peer took back their accidental move (1-time undo)
+          executeOnlineUndo(data.role, true);
         } else if (data.type === 'move') {
           const N = state.gridSize;
           const eType = data.edgeType;
@@ -4401,28 +4465,28 @@
       });
 
       conn.on('close', () => {
-        const remoteRole = role === 1 ? 2 : 1;
-        disconnectOnline(true, remoteRole);
+        // Allow brief 1.5s tolerance in case of WebRTC ICE renegotiation
+        setTimeout(() => {
+          if (state.online.active && (!state.online.conn || !state.online.conn.open)) {
+            const remoteRole = role === 1 ? 2 : 1;
+            disconnectOnline(true, remoteRole);
+          }
+        }, 1500);
       });
 
-      conn.on('error', () => {
-        const remoteRole = role === 1 ? 2 : 1;
-        disconnectOnline(true, remoteRole);
+      conn.on('error', err => {
+        console.warn('WebRTC data connection notice:', err);
+        // Do not immediately terminate room on minor network warning if channel remains open
+        if (!conn.open) {
+          setTimeout(() => {
+            if (state.online.active && (!state.online.conn || !state.online.conn.open)) {
+              const remoteRole = role === 1 ? 2 : 1;
+              disconnectOnline(true, remoteRole);
+            }
+          }, 2000);
+        }
       });
     }
-
-    // TURN relay (Metered) so Android <-> iPhone works across different networks / cellular
-    const ICE_CONFIG = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun.relay.metered.ca:80' },
-        { urls: 'turn:global.relay.metered.ca:80', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' },
-        { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' },
-        { urls: 'turn:global.relay.metered.ca:443', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' },
-        { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' }
-      ],
-      sdpSemantics: 'unified-plan'
-    };
 
     document.getElementById('btn-create-room').addEventListener('click', () => {
       if (typeof Peer === 'undefined') {
@@ -4434,7 +4498,7 @@
       const peerId = `dotsboxes3d-xo-${code}`;
       onlineStatusText.textContent = `Creating Room ${code}...`;
 
-      const peer = new Peer(peerId, { config: ICE_CONFIG });
+      const peer = new Peer(peerId);
       state.online.peer = peer;
       state.online.roomCode = code;
 
@@ -4469,17 +4533,12 @@
       }
       disconnectOnline();
       onlineStatusText.textContent = `Connecting to Room ${raw}...`;
-      const peer = new Peer(undefined, { config: ICE_CONFIG });
+      const peer = new Peer();
       state.online.peer = peer;
 
       peer.on('open', () => {
         const conn = peer.connect(`dotsboxes3d-xo-${raw}`, { reliable: true });
         setupDataConnection(conn, 2, raw);
-        setTimeout(() => {
-          if (!state.online.active && state.online.peer === peer) {
-            onlineStatusText.textContent = `Could not connect to Room ${raw} in time. Check the code, make sure your friend's room is still open, and try again.`;
-          }
-        }, 20000);
       });
 
       peer.on('error', () => {
@@ -5038,18 +5097,36 @@
 
     // Load saved custom Player 1 name from localStorage
     state.p1CustomName = '';
+    state.p2CustomName = '';
     try {
-      const savedName = localStorage.getItem('dots3d_p1_name');
-      if (savedName) state.p1CustomName = savedName;
+      const savedName = localStorage.getItem('dots3d_player_name') || localStorage.getItem('dots3d_p1_name');
+      if (savedName) {
+        state.p1CustomName = savedName;
+        state.p2CustomName = savedName;
+      }
     } catch (e) {}
 
     const p1NameInput = document.getElementById('player1-name-input');
     if (p1NameInput) {
       p1NameInput.value = state.p1CustomName;
       const saveCustomPlayerName = () => {
-        state.p1CustomName = p1NameInput.value.trim();
-        try { localStorage.setItem('dots3d_p1_name', state.p1CustomName); } catch (e) {}
+        const newName = p1NameInput.value.trim() || 'Player 1';
+        if (state.online.active && state.online.role === 2) {
+          state.p2CustomName = newName;
+          try { localStorage.setItem('dots3d_player_name', newName); } catch (e) {}
+        } else {
+          state.p1CustomName = newName;
+          try { localStorage.setItem('dots3d_player_name', newName); } catch (e) {}
+        }
         updateHUD();
+        // Immediately sync name change to remote opponent if online
+        if (state.online.active && state.online.conn && state.online.conn.open) {
+          state.online.conn.send({
+            type: 'player-name',
+            role: state.online.role,
+            name: newName
+          });
+        }
       };
       p1NameInput.addEventListener('input', saveCustomPlayerName);
       document.getElementById('btn-save-name').addEventListener('click', e => {
@@ -5170,7 +5247,7 @@
         setTxt('modal-p2-title', EX.p2ColorTitle);
         setTxt('color-done-btn', EX.applyColorsBtn);
 
-        // Online Modal
+        // Online Modal & Step-by-Step Tutorial
         setTxt('online-modal-title', L.playFriend);
         setTxt('online-modal-sub', EX.onlineSub);
         setTxt('online-host-title', EX.onlineHostTitle);
@@ -5183,6 +5260,33 @@
         setTxt('btn-join-room', EX.joinRoomBtn);
         setTxt('btn-online-disconnect', EX.disconnectBtn);
         setTxt('online-done-btn', EX.backToBoardBtn);
+
+        // Translate the online tutorial card and status elements
+        const OT = (typeof ONLINE_TUTORIAL_I18N !== 'undefined' && (ONLINE_TUTORIAL_I18N[langCode] || ONLINE_TUTORIAL_I18N.en)) || ONLINE_TUTORIAL_I18N.en;
+        setTxt('online-tutorial-title', OT.guideTitle);
+        setTxt('online-step1-title', OT.step1Title);
+        if (OT.hostAuthorityNote) {
+          setHtml('lbl-online-host-note', OT.hostAuthorityNote);
+        }
+        setHtml('online-step1-desc', OT.step1Desc);
+        setTxt('online-step2-title', OT.step2Title);
+        setHtml('online-step2-desc', OT.step2Desc);
+        setTxt('online-step3-title', OT.step3Title);
+        setHtml('online-step3-desc', OT.step3Desc);
+
+        if (!state.online.active && !state.online.roomCode) {
+          setTxt('online-status-text', OT.statusDefault);
+        }
+        const joinInput = document.getElementById('join-room-input');
+        if (joinInput) {
+          joinInput.placeholder = OT.placeholder;
+        }
+
+        // Translate Back button label on every modal
+        const backText = (typeof BACK_I18N !== 'undefined' && (BACK_I18N[langCode] || BACK_I18N.en)) || 'Back';
+        document.querySelectorAll('.lbl-modal-back').forEach(el => {
+          el.textContent = backText;
+        });
 
         // Share, Rate, Feedback, No-Ads Modals
         setTxt('share-modal-title', L.shareBtn);
@@ -5398,10 +5502,7 @@
       const store = getStoreInfo(currentSelectedPlatform);
       SoundFX.dotSelect();
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (window.IS_IOS) {
-        // iOS: the https apps.apple.com link opens the App Store app itself; a delayed window.open() would be popup-blocked
-        window.location.href = store.webUrl;
-      } else if (isMobile) {
+      if (isMobile) {
         window.location.href = store.nativeMarketUrl;
         setTimeout(() => {
           window.open(store.webUrl, '_blank', 'noopener,noreferrer');
@@ -5462,9 +5563,7 @@
       const store = getStoreInfo(detectDevicePlatform());
       SoundFX.victory();
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (window.IS_IOS) {
-        window.location.href = store.reviewWebUrl;
-      } else if (isMobile) {
+      if (isMobile) {
         window.location.href = store.reviewNativeUrl;
         setTimeout(() => {
           window.open(store.reviewWebUrl, '_blank', 'noopener,noreferrer');
@@ -5644,7 +5743,7 @@ Player & Game Info:
     if (openEmailAppBtn) {
       openEmailAppBtn.addEventListener('click', () => {
         const { subject, body } = buildFeedbackEmailPayload();
-        const mailtoLink = `mailto:${DEV_FEEDBACK_FALLBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        const mailtoLink = `mailto:${encodeURIComponent(DEV_FEEDBACK_FALLBACK_EMAIL)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         SoundFX.dotSelect();
         window.location.href = mailtoLink;
       });
@@ -5668,6 +5767,346 @@ ${body}`;
     // =========================================================================
     // FULL 30-LANGUAGE EXTENDED DICTIONARY (TRANSLATES EVERY MODAL & FEATURE)
     // =========================================================================
+    // 30-LANGUAGE DICTIONARY FOR ONLINE PLAY TUTORIAL & ONLINE STATUS
+    const ONLINE_TUTORIAL_I18N = {
+      en: {
+        guideTitle: 'How to Connect with Friends (Quick 3-Step Guide)',
+        step1Title: 'Player 1 (Host):',
+        step1Desc: 'Tap <strong>"Create Room Code"</strong> to generate your unique 6-digit code and share it with your friend.',
+        step2Title: 'Player 2 (Friend):',
+        step2Desc: 'Enter the 6-digit code in <strong>"Join Friend"</strong> and tap <strong>"Join Room"</strong>.',
+        step3Title: 'Start Playing:',
+        step3Desc: 'Once connected for both players, the game automatically takes you to the main page to start!',
+        statusDefault: 'Create a room and share the 6-digit code with your friend, or enter their code below.',
+        placeholder: 'Enter 6-digit code...',
+        hostAuthorityNote: '<strong>Room Host (Player 1)</strong> chooses player colors & controls board size (16, 25, 36 Dots). Each player controls their own 3D camera & box zoom.'
+      },
+      es: {
+        guideTitle: 'Cómo Conectarte con Amigos (Guía Rápida de 3 Pasos)',
+        step1Title: 'Jugador 1 (Anfitrión):',
+        step1Desc: 'Toca <strong>"Crear Código de Sala"</strong> para generar tu código único de 6 dígitos y compártelo.',
+        step2Title: 'Jugador 2 (Amigo):',
+        step2Desc: 'Ingresa el código de 6 dígitos en <strong>"Unirse a Amigo"</strong> y toca <strong>"Unirse a Sala"</strong>.',
+        step3Title: '¡A Jugar!',
+        step3Desc: '¡Una vez conectados ambos jugadores, el juego los lleva automáticamente al tablero para comenzar!',
+        statusDefault: 'Crea una sala y comparte el código de 6 dígitos con tu amigo, o ingresa su código abajo.',
+        placeholder: 'Ingresa código de 6 dígitos...',
+        hostAuthorityNote: '<strong>El Anfitrión (Jugador 1)</strong> elige los colores y el tamaño del tablero (16, 25, 36 puntos). Cada jugador controla su propia cámara 3D y zoom.'
+      },
+      zh: {
+        guideTitle: '如何与好友联机（3 步快速指南）',
+        step1Title: '玩家 1（房主）：',
+        step1Desc: '点击<strong>“创建房间码”</strong>生成专属的 6 位房间码并发送给好友。',
+        step2Title: '玩家 2（好友）：',
+        step2Desc: '在<strong>“加入好友”</strong>中输入 6 位房间码并点击<strong>“加入房间”</strong>。',
+        step3Title: '开始对战：',
+        step3Desc: '双方连接成功后，游戏将自动进入棋盘开始精彩对决！',
+        statusDefault: '创建房间并将 6 位房间码分享给好友，或在下方输入好友的代码。',
+        placeholder: '输入 6 位房间码...',
+        hostAuthorityNote: '<strong>房主（玩家 1）</strong>可自选玩家颜色并切换棋盘尺寸（16、25、36 点）。每位玩家可独立调节自己的 3D 视角与缩放。'
+      },
+      hi: {
+        guideTitle: 'दोस्तों के साथ कैसे जुड़ें (त्वरित 3-चरण गाइड)',
+        step1Title: 'खिलाड़ी 1 (होस्ट):',
+        step1Desc: 'अपना 6-अंकीय कोड बनाने और दोस्त को भेजने के लिए <strong>"रूम कोड बनाएं"</strong> दबाएं।',
+        step2Title: 'खिलाड़ी 2 (दोस्त):',
+        step2Desc: '<strong>"दोस्त से जुड़ें"</strong> में 6-अंकीय कोड दर्ज करें और <strong>"रूम से जुड़ें"</strong> दबाएं।',
+        step3Title: 'खेलना शुरू करें:',
+        step3Desc: 'दोनों खिलाड़ियों के जुड़ते ही गेम आपको खेलने के लिए मुख्य बोर्ड पर ले जाएगा!',
+        statusDefault: 'एक रूम बनाएं और अपने दोस्त के साथ 6-अंकीय कोड शेयर करें, या नीचे उनका कोड दर्ज करें।',
+        placeholder: '6-अंकीय कोड दर्ज करें...',
+        hostAuthorityNote: '<strong>रूम होस्ट (खिलाड़ी 1)</strong> खिलाड़ियों के रंग चुनता है और बोर्ड का आकार (16, 25, 36 डॉट्स) बदल सकता है। प्रत्येक खिलाड़ी अपना 3D कैमरा और ज़ूम नियंत्रित करता है।'
+      },
+      ar: {
+        guideTitle: 'طريقة الاتصال باللعب مع الأصدقاء (دليل سريع من 3 خطوات)',
+        step1Title: 'اللاعب 1 (المضيف):',
+        step1Desc: 'اضغط على <strong>"إنشاء رمز غرفة"</strong> لإنشاء رمزك الفريد المكون من 6 أرقام ومشاركته مع صديقك.',
+        step2Title: 'اللاعب 2 (الصديق):',
+        step2Desc: 'أدخل الرمز المكون من 6 أرقام في <strong>"انضم لصديق"</strong> ثم اضغط على <strong>"انضمام للغرفة"</strong>.',
+        step3Title: 'ابدأ اللعب:',
+        step3Desc: 'بمجرد اتصال كلا اللاعبين، ستنقلكما اللعبة تلقائياً إلى اللوحة الرئيسية لبدء اللعب!',
+        statusDefault: 'أنشئ غرفة وشارك الرمز المكون من 6 أرقام مع صديقك، أو أدخل رمزه في الأسفل.',
+        placeholder: 'أدخل رمز الغرفة من 6 أرقام...',
+        hostAuthorityNote: '<strong>مضيف الغرفة (اللاعب 1)</strong> يختار ألوان اللاعبين ويتحكم في حجم اللوحة (16، 25، 36 نقطة). كل لاعب يتحكم في الكاميرا وزاوية الرؤية الخاصة به.'
+      },
+      fr: {
+        guideTitle: 'Comment Se Connecter avec des Amis (Guide Rapide en 3 Étapes)',
+        step1Title: 'Joueur 1 (Hôte) :',
+        step1Desc: 'Appuyez sur <strong>"Créer un Code"</strong> pour générer votre code unique à 6 chiffres et le partager.',
+        step2Title: 'Joueur 2 (Ami) :',
+        step2Desc: 'Entrez le code à 6 chiffres dans <strong>"Rejoindre un Ami"</strong> et appuyez sur <strong>"Rejoindre"</strong>.',
+        step3Title: 'Commencez à Jouer :',
+        step3Desc: 'Dès que les deux joueurs sont connectés, la partie démarre automatiquement sur le plateau !',
+        statusDefault: 'Créez une salle et partagez le code à 6 chiffres avec votre ami, ou entrez son code ci-dessous.',
+        placeholder: 'Entrez le code à 6 chiffres...',
+        hostAuthorityNote: '<strong>L\'hôte (Joueur 1)</strong> choisit les couleurs et la taille du plateau (16, 25, 36 points). Chaque joueur contrôle sa caméra 3D et son zoom.'
+      },
+      bn: {
+        guideTitle: 'বন্ধুদের সাথে কীভাবে খেলবেন (সহজ ৩টি ধাপ)',
+        step1Title: 'খেলোয়াড় ১ (হোস্ট):',
+        step1Desc: 'আপনার ৬-সংখ্যার কোড তৈরি করতে <strong>"রুম কোড তৈরি করুন"</strong> চাপুন এবং বন্ধুর সাথে শেয়ার করুন।',
+        step2Title: 'খেলোয়াড় ২ (বন্ধু):',
+        step2Desc: '<strong>"বন্ধুর সাথে যুক্ত হন"</strong> ঘরে ৬-সংখ্যার কোড দিন এবং <strong>"রুমে প্রবেশ করুন"</strong> চাপুন।',
+        step3Title: 'খেলা শুরু করুন:',
+        step3Desc: 'উভয় খেলোয়াড় সংযুক্ত হলেই গেমটি সরাসরি বোর্ডের মূল পৃষ্ঠায় শুরু হবে!',
+        statusDefault: 'রুম তৈরি করে বন্ধুর সাথে ৬-সংখ্যার কোড শেয়ার করুন অথবা নিচে কোড লিখুন।',
+        placeholder: '৬-সংখ্যার কোড লিখুন...'
+      },
+      pt: {
+        guideTitle: 'Como Conectar com Amigos (Guia Rápido em 3 Passos)',
+        step1Title: 'Jogador 1 (Anfitrião):',
+        step1Desc: 'Toque em <strong>"Criar Código"</strong> para gerar seu código exclusivo de 6 dígitos e compartilhe.',
+        step2Title: 'Jogador 2 (Amigo):',
+        step2Desc: 'Insira o código de 6 dígitos em <strong>"Entrar com Amigo"</strong> e toque em <strong>"Entrar na Sala"</strong>.',
+        step3Title: 'Começar a Jogar:',
+        step3Desc: 'Assim que ambos conectarem, o jogo leva vocês automaticamente ao tabuleiro!',
+        statusDefault: 'Crie uma sala e compartilhe o código de 6 dígitos com seu amigo, ou digite o código dele abaixo.',
+        placeholder: 'Digite o código de 6 dígitos...'
+      },
+      ru: {
+        guideTitle: 'Как играть с друзьями по сети (3 простых шага)',
+        step1Title: 'Игрок 1 (Создатель):',
+        step1Desc: 'Нажмите <strong>«Создать код комнаты»</strong>, чтобы получить 6-значный код и отправить его другу.',
+        step2Title: 'Игрок 2 (Друг):',
+        step2Desc: 'Введите 6-значный код в поле <strong>«Подключиться»</strong> и нажмите <strong>«Войти»</strong>.',
+        step3Title: 'Начало игры:',
+        step3Desc: 'Как только оба игрока подключатся, игра автоматически откроет 3D-поле!',
+        statusDefault: 'Создайте комнату и отправьте 6-значный код другу, либо введите его код ниже.',
+        placeholder: 'Введите 6-значный код...'
+      },
+      ur: {
+        guideTitle: 'دوستوں کے ساتھ آن لائن کھیلنے کا آسان طریقہ (3 مراحل)',
+        step1Title: 'کھلاڑی 1 (میزبان):',
+        step1Desc: 'اپنا منفرد 6 ہندسوں کا کوڈ بنانے اور دوست کو بھیجنے کیلئے <strong>"روم کوڈ بنائیں"</strong> دبائیں۔',
+        step2Title: 'کھلاڑی 2 (دوست):',
+        step2Desc: '<strong>"دوست سے جڑیں"</strong> میں 6 ہندسوں کا کوڈ درج کریں اور <strong>"روم میں شامل ہوں"</strong> دبائیں۔',
+        step3Title: 'کھیلنا شروع کریں:',
+        step3Desc: 'دونوں کھلاڑیوں کے جڑتے ہی گیم خودکار طور پر مین بورڈ پر شروع ہو جائے گی!',
+        statusDefault: 'ایک روم بنائیں اور 6 ہندسوں کا کوڈ دوست سے شیئر کریں یا نیچے ان کا کوڈ درج کریں۔',
+        placeholder: '6 ہندسوں کا کوڈ درج کریں...'
+      },
+      id: {
+        guideTitle: 'Cara Main Bersama Teman Online (Panduan 3 Langkah)',
+        step1Title: 'Pemain 1 (Host):',
+        step1Desc: 'Ketuk <strong>"Buat Kode Ruang"</strong> untuk membuat kode 6 angka dan bagikan ke teman.',
+        step2Title: 'Pemain 2 (Teman):',
+        step2Desc: 'Masukkan kode 6 angka di <strong>"Gabung Teman"</strong> lalu ketuk <strong>"Gabung Ruang"</strong>.',
+        step3Title: 'Mulai Bermain:',
+        step3Desc: 'Setelah kedua pemain terhubung, permainan langsung membuka papan 3D!',
+        statusDefault: 'Buat ruang dan bagikan kode 6 angka ke teman Anda, atau masukkan kodenya di bawah.',
+        placeholder: 'Masukkan 6 angka kode...'
+      },
+      de: {
+        guideTitle: 'Mit Freunden online verbinden (Kurzanleitung in 3 Schritten)',
+        step1Title: 'Spieler 1 (Host):',
+        step1Desc: 'Tippe auf <strong>"Raumcode erstellen"</strong>, um deinen 6-stelligen Code zu generieren und zu teilen.',
+        step2Title: 'Spieler 2 (Freund):',
+        step2Desc: 'Gib den 6-stelligen Code bei <strong>"Freund beitreten"</strong> ein und tippe auf <strong>"Beitreten"</strong>.',
+        step3Title: 'Spielstart:',
+        step3Desc: 'Sobald beide verbunden sind, startet das Spiel automatisch auf dem 3D-Spielfeld!',
+        statusDefault: 'Erstelle einen Raum und teile den 6-stelligen Code mit deinem Freund oder gib seinen Code unten ein.',
+        placeholder: '6-stelligen Code eingeben...'
+      },
+      ja: {
+        guideTitle: '友達とオンライン対戦する方法（簡単3ステップ）',
+        step1Title: 'プレイヤー1（ホスト）：',
+        step1Desc: '<strong>「ルームコード作成」</strong>をタップして6桁のコードを生成し友達に共有します。',
+        step2Title: 'プレイヤー2（参加者）：',
+        step2Desc: '<strong>「ルームに参加」</strong>に6桁のコードを入力し<strong>「参加」</strong>をタップします。',
+        step3Title: '対戦開始：',
+        step3Desc: '両者が接続されると自動的にメイン盤面に移動し対戦が始まります！',
+        statusDefault: 'ルームを作成して6桁のコードを友達と共有するか、以下に相手のコードを入力してください。',
+        placeholder: '6桁のコードを入力...'
+      },
+      sw: {
+        guideTitle: 'Jinsi ya Kucheza na Marafiki Mtandaoni (Mwongozo wa Hatua 3)',
+        step1Title: 'Mchezaji 1 (Mwenyeji):',
+        step1Desc: 'Gonga <strong>"Unda Msimbo wa Chumba"</strong> ili kutengeneza msimbo wako wa tarakimu 6 na ushiriki.',
+        step2Title: 'Mchezaji 2 (Rafiki):',
+        step2Desc: 'Weka msimbo wa tarakimu 6 kwenye <strong>"Jiunge na Rafiki"</strong> kisha gonga <strong>"Jiunge"</strong>.',
+        step3Title: 'Anza Kucheza:',
+        step3Desc: 'Wachezaji wote wanapounganishwa, mchezo unakuchukua moja kwa moja kuanza!',
+        statusDefault: 'Unda chumba na ushiriki msimbo wa tarakimu 6 na rafiki yako, au ingiza msimbo wao hapa chini.',
+        placeholder: 'Weka msimbo wa tarakimu 6...'
+      },
+      mr: {
+        guideTitle: 'मित्रांसोबत ऑनलाइन कसे खेळायचे (३ सोप्या पायऱ्या)',
+        step1Title: 'खेळाडू १ (होस्ट):',
+        step1Desc: 'तुमचा ६-अंकी कोड तयार करण्यासाठी <strong>"रूम कोड तयार करा"</strong> टॅप करा आणि मित्राला पाठवा.',
+        step2Title: 'खेळाडू २ (मित्र):',
+        step2Desc: '<strong>"मित्राशी जोडा"</strong> मध्ये ६-अंकी कोड टाका आणि <strong>"सामील व्हा"</strong> टॅप करा.',
+        step3Title: 'खेळ सुरू करा:',
+        step3Desc: 'दोन्ही खेळाडू जोडले जाताच खेळ थेट मुख्य बोर्डवर सुरू होईल!',
+        statusDefault: 'रूम तयार करा आणि ६-अंकी कोड मित्रासोबत शेअर करा, किंवा खाली त्यांचा कोड टाका.',
+        placeholder: '६-अंकी कोड टाका...'
+      },
+      te: {
+        guideTitle: 'స్నేహితులతో ఆన్‌లైన్‌లో ఎలా కనెక్ట్ కావాలి (త్వరిత 3-దశల గైడ్)',
+        step1Title: 'ఆటగాడు 1 (హోస్ట్):',
+        step1Desc: 'మీ 6-అంకెల కోడ్‌ను రూపొందించడానికి <strong>"రూమ్ కోడ్ సృష్టించు"</strong> నొక్కండి మరియు పంచుకోండి.',
+        step2Title: 'ఆటగాడు 2 (స్నేహితుడు):',
+        step2Desc: '<strong>"స్నేహితుడితో చేరండి"</strong>లో 6-అంకెల కోడ్‌ను నమోదు చేసి <strong>"చేరండి"</strong> నొక్కండి.',
+        step3Title: 'ఆడటం ప్రారంభించండి:',
+        step3Desc: 'ఇద్దరూ కనెక్ట్ కాగానే గేమ్ నేరుగా బోర్డుపైకి తీసుకెళ్తుంది!',
+        statusDefault: 'రూమ్ సృష్టించి మీ స్నేహితుడితో 6-అంకెల కోడ్ పంచుకోండి లేదా వారి కోడ్ నమోదు చేయండి.',
+        placeholder: '6-అంకెల కోడ్ నమోదు చేయండి...'
+      },
+      tr: {
+        guideTitle: 'Arkadaşlarla Çevrimiçi Nasıl Bağlanılır (3 Adımda Hızlı Kılavuz)',
+        step1Title: '1. Oyuncu (Kurucu):',
+        step1Desc: '6 haneli oda kodunuzu oluşturmak için <strong>"Oda Kodu Oluştur"</strong> butonuna dokunun ve paylaşın.',
+        step2Title: '2. Oyuncu (Arkadaş):',
+        step2Desc: '6 haneli kodu <strong>"Arkadaşa Katıl"</strong> kutusuna yazıp <strong>"Odaya Katıl"</strong> butonuna dokunun.',
+        step3Title: 'Oyuna Başlayın:',
+        step3Desc: 'Her iki oyuncu bağlandığında oyun otomatik olarak 3D tahtaya geçip başlar!',
+        statusDefault: 'Bir oda oluşturup 6 haneli kodu arkadaşınızla paylaşın veya aşağıya kodunu girin.',
+        placeholder: '6 haneli kodu girin...'
+      },
+      ta: {
+        guideTitle: 'நண்பர்களுடன் ஆன்லைனில் இணைவது எப்படி (விரைவு 3 படிகள்)',
+        step1Title: 'வீரர் 1 (ஹோஸ்ட்):',
+        step1Desc: 'உங்கள் 6-இலக்க குறியீட்டை உருவாக்க <strong>"அறை குறியீடு உருவாக்கு"</strong> தட்டவும்.',
+        step2Title: 'வீரர் 2 (நண்பர்):',
+        step2Desc: '6-இலக்க குறியீட்டை உள்ளிட்டு <strong>"அறையில் சேர்"</strong> தட்டவும்.',
+        step3Title: 'விளையாட தொடங்குங்கள்:',
+        step3Desc: 'இருவரும் இணைந்தவுடன் ஆட்டம் தானாகவே பலகையில் தொடங்கிவிடும்!',
+        statusDefault: 'அறையை உருவாக்கி 6-இலக்க குறியீட்டை நண்பருடன் பகிரவும் அல்லது கீழே குறியீட்டை உள்ளிடவும்.',
+        placeholder: '6-இலக்க குறியீடு...'
+      },
+      vi: {
+        guideTitle: 'Cách Kết Nối Chơi Cùng Bạn Bè Online (Hướng Dẫn 3 Bước)',
+        step1Title: 'Người chơi 1 (Chủ phòng):',
+        step1Desc: 'Chạm <strong>"Tạo Mã Phòng"</strong> để nhận mã 6 chữ số và gửi cho bạn bè.',
+        step2Title: 'Người chơi 2 (Bạn bè):',
+        step2Desc: 'Nhập mã 6 chữ số vào ô <strong>"Vào Phòng Bạn"</strong> rồi chạm <strong>"Vào Phòng"</strong>.',
+        step3Title: 'Bắt Đầu Trận Đấu:',
+        step3Desc: 'Khi cả hai kết nối thành công, bàn cờ 3D sẽ tự động mở để bắt đầu!',
+        statusDefault: 'Tạo phòng và chia sẻ mã 6 chữ số với bạn bè, hoặc nhập mã của bạn bên dưới.',
+        placeholder: 'Nhập mã 6 chữ số...'
+      },
+      ko: {
+        guideTitle: '친구와 온라인 연결하는 방법 (3단계 빠른 가이드)',
+        step1Title: '플레이어 1 (방장):',
+        step1Desc: '<strong>"방 코드 만들기"</strong>를 눌러 6자리 코드를 생성하고 친구에게 공유하세요.',
+        step2Title: '플레이어 2 (친구):',
+        step2Desc: '<strong>"친구 방 참가"</strong>에 6자리 코드를 입력하고 <strong>"방 참가하기"</strong>를 누르세요.',
+        step3Title: '게임 시작:',
+        step3Desc: '두 플레이어가 연결되면 자동으로 3D 게임 보드로 이동하여 시작됩니다!',
+        statusDefault: '방을 만들고 6자리 코드를 친구와 공유하거나 아래에 상대방 코드를 입력하세요.',
+        placeholder: '6자리 코드 입력...'
+      },
+      it: {
+        guideTitle: 'Come Giocare Online con gli Amici (Guida in 3 Passaggi)',
+        step1Title: 'Giocatore 1 (Host):',
+        step1Desc: 'Tocca <strong>"Crea Codice Stanza"</strong> per generare il codice a 6 cifre e condividilo.',
+        step2Title: 'Giocatore 2 (Amico):',
+        step2Desc: 'Inserisci il codice a 6 cifre in <strong>"Unisciti ad Amico"</strong> e tocca <strong>"Entra"</strong>.',
+        step3Title: 'Inizia a Giocare:',
+        step3Desc: 'Appena entrambi siete connessi, la partita inizia automaticamente sul tabellone!',
+        statusDefault: 'Crea una stanza e condividi il codice a 6 cifre con il tuo amico, o inserisci il suo codice.',
+        placeholder: 'Inserisci codice a 6 cifre...'
+      },
+      fa: {
+        guideTitle: 'راهنمای سریع اتصال آنلاین با دوستان (۳ مرحله ساده)',
+        step1Title: 'بازیکن ۱ (میزبان):',
+        step1Desc: 'روی <strong>«ساخت کد اتاق»</strong> ضربه بزنید تا کد ۶ رقمی تولید و برای دوستتان ارسال شود.',
+        step2Title: 'بازیکن ۲ (دوست):',
+        step2Desc: 'کد ۶ رقمی را در <strong>«ورود با کد»</strong> وارد کرده و <strong>«ورود به اتاق»</strong> را بزنید.',
+        step3Title: 'شروع بازی:',
+        step3Desc: 'به محض اتصال هر دو بازیکن، بازی شما را خودکار به صفحه اصلی می‌برد!',
+        statusDefault: 'یک اتاق بسازید و کد ۶ رقمی را با دوستتان به اشتراک بگذارید یا کد او را در پایین وارد کنید.',
+        placeholder: 'کد ۶ رقمی اتاق را وارد کنید...'
+      },
+      pl: {
+        guideTitle: 'Jak połączyć się ze znajomymi online (Szybki przewodnik w 3 krokach)',
+        step1Title: 'Gracz 1 (Gospodarz):',
+        step1Desc: 'Dotknij <strong>"Utwórz Kod Pokoju"</strong>, aby wygenerować 6-cyfrowy kod i wyślij go znajomemu.',
+        step2Title: 'Gracz 2 (Znajomy):',
+        step2Desc: 'Wpisz 6-cyfrowy kod w sekcji <strong>"Dołącz do Znajomego"</strong> i kliknij <strong>"Dołącz"</strong>.',
+        step3Title: 'Rozpocznij Grę:',
+        step3Desc: 'Po połączeniu obu graczy gra automatycznie przeniesie Was na planszę 3D!',
+        statusDefault: 'Utwórz pokój i udostępnij 6-cyfrowy kod znajomemu lub wprowadź jego kod poniżej.',
+        placeholder: 'Wpisz 6-cyfrowy kod...'
+      },
+      uk: {
+        guideTitle: 'Як грати з друзями онлайн (Швидка інструкція у 3 кроки)',
+        step1Title: 'Гравець 1 (Хост):',
+        step1Desc: 'Торкніться <strong>«Створити код кімнати»</strong>, щоб отримати 6-значний код і надіслати другу.',
+        step2Title: 'Гравець 2 (Друг):',
+        step2Desc: 'Введіть 6-значний код у полі <strong>«Приєднатися»</strong> і торкніться <strong>«Увійти»</strong>.',
+        step3Title: 'Початок Гри:',
+        step3Desc: 'Щойно обидва гравці підключаться, гра автоматично відкриє 3D-поле!',
+        statusDefault: 'Створіть кімнату та поділіться 6-значним кодом із другом, або введіть його код нижче.',
+        placeholder: 'Введіть 6-значний код...'
+      },
+      nl: {
+        guideTitle: 'Online Spelen met Vrienden (Snelgids in 3 Stappen)',
+        step1Title: 'Speler 1 (Host):',
+        step1Desc: 'Tik op <strong>"Maak Kamercode"</strong> om je unieke 6-cijferige code te genereren en deel deze.',
+        step2Title: 'Speler 2 (Vriend):',
+        step2Desc: 'Voer de 6-cijferige code in bij <strong>"Deelnemen"</strong> en tik op <strong>"Kamer Binnengaan"</strong>.',
+        step3Title: 'Begin met Spelen:',
+        step3Desc: 'Zodra beide spelers zijn verbonden, start het spel direct op het bord!',
+        statusDefault: 'Maak een kamer en deel de 6-cijferige code met je vriend, of voer hieronder zijn code in.',
+        placeholder: 'Voer 6-cijferige code in...'
+      },
+      th: {
+        guideTitle: 'วิธีเชื่อมต่อเล่นออนไลน์กับเพื่อน (คู่มือ 3 ขั้นตอนง่ายๆ)',
+        step1Title: 'ผู้เล่น 1 (โฮสต์):',
+        step1Desc: 'แตะ <strong>"สร้างรหัสห้อง"</strong> เพื่อสร้างรหัส 6 หลักแล้วแชร์ให้เพื่อนของคุณ',
+        step2Title: 'ผู้เล่น 2 (เพื่อน):',
+        step2Desc: 'ใส่รหัส 6 หลักในช่อง <strong>"เข้าร่วมกับเพื่อน"</strong> แล้วแตะ <strong>"เข้าร่วมห้อง"</strong>',
+        step3Title: 'เริ่มเล่นเกม:',
+        step3Desc: 'เมื่อเชื่อมต่อสำเร็จทั้งสองฝั่ง เกมจะนำคุณเข้าสู่กระดาน 3D ทันที!',
+        statusDefault: 'สร้างห้องและแชร์รหัส 6 หลักกับเพื่อนของคุณ หรือป้อนรหัสห้องของเพื่อนด้านล่าง',
+        placeholder: 'ป้อนรหัส 6 หลัก...'
+      },
+      ms: {
+        guideTitle: 'Cara Menyambung dengan Rakan Dalam Talian (Panduan 3 Langkah)',
+        step1Title: 'Pemain 1 (Hos):',
+        step1Desc: 'Ketik <strong>"Cipta Kod Bilik"</strong> untuk menjana kod 6 digit dan kongsi kepada rakan.',
+        step2Title: 'Pemain 2 (Rakan):',
+        step2Desc: 'Masukkan kod 6 digit di <strong>"Sertai Rakan"</strong> dan ketik <strong>"Sertai Bilik"</strong>.',
+        step3Title: 'Mula Bermain:',
+        step3Desc: 'Sebaik sahaja kedua-dua pemain disambungkan, permainan akan terus bermula di papan 3D!',
+        statusDefault: 'Cipta bilik dan kongsi kod 6 digit dengan rakan anda, atau masukkan kod mereka di bawah.',
+        placeholder: 'Masukkan kod 6 digit...'
+      },
+      tl: {
+        guideTitle: 'Paano Kumonekta sa Kaibigan Online (3-Hakbang na Gabay)',
+        step1Title: 'Manlalaro 1 (Host):',
+        step1Desc: 'Pindutin ang <strong>"Gumawa ng Room Code"</strong> upang makakuha ng 6-digit code at ibahagi ito.',
+        step2Title: 'Manlalaro 2 (Kaibigan):',
+        step2Desc: 'Ilagay ang 6-digit code sa <strong>"Sumali sa Kaibigan"</strong> at pindutin ang <strong>"Sumali"</strong>.',
+        step3Title: 'Simulan ang Laro:',
+        step3Desc: 'Kapag nakakonekta na ang dalawang manlalaro, awtomatikong magsisimula ang laro sa 3D board!',
+        statusDefault: 'Gumawa ng room at ibahagi ang 6-digit code sa iyong kaibigan, o ilagay ang kanilang code sa ibaba.',
+        placeholder: 'Ilagay ang 6-digit code...'
+      },
+      ro: {
+        guideTitle: 'Cum să te Conectezi cu Prietenii Online (Ghid Rapid în 3 Pași)',
+        step1Title: 'Jucătorul 1 (Gazdă):',
+        step1Desc: 'Atinge <strong>"Creează Cod Cameră"</strong> pentru a genera codul de 6 cifre și trimite-l prietenului.',
+        step2Title: 'Jucătorul 2 (Prieten):',
+        step2Desc: 'Introdu codul de 6 cifre la <strong>"Alătură-te"</strong> și atinge <strong>"Intră în Cameră"</strong>.',
+        step3Title: 'Începe Jocul:',
+        step3Desc: 'Imediat ce ambii jucători sunt conectați, jocul vă duce pe tabla 3D pentru a juca!',
+        statusDefault: 'Creează o cameră și trimite codul de 6 cifre prietenului tău, sau introdu codul lui mai jos.',
+        placeholder: 'Introdu codul de 6 cifre...'
+      },
+      el: {
+        guideTitle: 'Πώς να Συνδεθείτε με Φίλους Online (Γρήγορος Οδηγός 3 Βημάτων)',
+        step1Title: 'Παίκτης 1 (Οικοδεσπότης):',
+        step1Desc: 'Πατήστε <strong>"Δημιουργία Κωδικού"</strong> για να δημιουργήσετε τον 6ψήφιο κωδικό και μοιραστείτε τον.',
+        step2Title: 'Παίκτης 2 (Φίλος):',
+        step2Desc: 'Εισαγάγετε τον 6ψήφιο κωδικό στο <strong>"Σύνδεση με Φίλο"</strong> και πατήστε <strong>"Είσοδος"</strong>.',
+        step3Title: 'Έναρξη Παιχνιδιού:',
+        step3Desc: 'Μόλις συνδεθούν και οι δύο παίκτες, το παιχνίδι ξεκινά αυτόματα στο τρισδιάστατο ταμπλό!',
+        statusDefault: 'Δημιουργήστε ένα δωμάτιο και μοιραστείτε τον 6ψήφιο κωδικό με τον φίλο σας ή εισαγάγετε τον κωδικό του.',
+        placeholder: 'Εισαγάγετε 6ψήφιο κωδικό...'
+      }
+    };
+
     const EXTRA_I18N = {
       en: {
         tilt3D: '3D Tilt', topDown: 'Top-Down', boxesClaimed: 'Boxes Claimed',
@@ -6277,7 +6716,6 @@ ${body}`;
       if (nativeApp && typeof nativeApp.setAdFreePassActive === 'function') {
         try { nativeApp.setAdFreePassActive(state.adFreeSubscribed); } catch (e) {}
       }
-      IOSNative.post('setAdFreePassActive', { active: state.adFreeSubscribed });
     }
 
     // Clear any pending timeout and unlock the purchase button
@@ -6373,21 +6811,6 @@ ${body}`;
         }
       }, 8000);
 
-      // iOS: Google Play does not exist here. Purchases must go through StoreKit in the native wrapper.
-      if (window.IS_IOS) {
-        if (IOSNative.available()) {
-          updateNoAdsUI('Opening App Store subscription...');
-          if (!IOSNative.post('purchaseNoAdsSubscription', { sku: NO_ADS_SUB_SKU })) {
-            clearSubscriptionTimeout();
-            updateNoAdsUI('Could not open the App Store purchase.');
-          }
-        } else {
-          clearSubscriptionTimeout();
-          updateNoAdsUI('The Ad-Free Pass is available in the App Store version of the game.');
-        }
-        return;
-      }
-
       const pkgId = getAutoDetectedPackageId();
       const playStoreSubUrl = `https://play.google.com/store/account/subscriptions?sku=${NO_ADS_SUB_SKU}&package=${pkgId}`;
       const playStoreAppUrl = `https://play.google.com/store/apps/details?id=${pkgId}`;
@@ -6448,19 +6871,6 @@ ${body}`;
 
     document.getElementById('btn-noads-restore').addEventListener('click', async () => {
       SoundFX.dotSelect();
-      if (window.IS_IOS) {
-        if (!IOSNative.available()) {
-          updateNoAdsUI('Restore is available in the App Store version of the game.');
-          return;
-        }
-        if (subscriptionActionInProgress) return;
-        subscriptionActionInProgress = true;
-        updateNoAdsUI();
-        if (window._subSafetyTimeout) clearTimeout(window._subSafetyTimeout);
-        window._subSafetyTimeout = setTimeout(() => { clearSubscriptionTimeout(); updateNoAdsUI(); }, 15000);
-        IOSNative.post('restoreNoAdsSubscription', { sku: NO_ADS_SUB_SKU });
-        return;
-      }
       const billing = window.NativeBilling;
       if (!billing || typeof billing.restoreNoAdsSubscription !== 'function') {
         updateNoAdsUI('Restore is unavailable in this HTML preview. Connect Google Play Billing in the Android app first.');
@@ -6480,6 +6890,17 @@ ${body}`;
     // Auto-reset loading state and re-check entitlement when returning to game from Play Store
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
+        // 1. Immediately resume WebRTC heartbeat upon returning to tab to prevent false offline status
+        if (state.online.active && state.online.conn && state.online.conn.open) {
+          lastRemoteHeartbeatTime = Date.now();
+          try {
+            state.online.conn.send({ type: 'heartbeat-ping', time: Date.now() });
+            state.online.conn.send({ type: 'peer-resume', role: state.online.role });
+          } catch (e) {}
+          updatePlayerOnlineBadges(true, true);
+        }
+
+        // 2. Subscription check resume
         if (subscriptionActionInProgress) {
           setTimeout(() => {
             clearSubscriptionTimeout();
@@ -6500,106 +6921,11 @@ ${body}`;
       const billing = window.NativeBilling;
       if (billing && typeof billing.openSubscriptionManagement === 'function') {
         billing.openSubscriptionManagement(NO_ADS_SUB_SKU);
-      } else if (window.IS_IOS) {
-        window.location.href = 'https://apps.apple.com/account/subscriptions';
       } else {
         window.open('https://play.google.com/store/account/subscriptions', '_blank', 'noopener');
       }
       updateNoAdsUI('Manage or cancel your subscription in Google Play. Access remains active until Google Play confirms it has expired.');
     });
-
-    // =========================================================================
-    // iOS / SAFARI RUNTIME FIXES
-    // =========================================================================
-    // 1) Audio: iOS only starts Web Audio from touchend/click, and suspends it when the app is backgrounded
-    ['touchend', 'pointerup', 'click', 'keydown'].forEach(evt => {
-      document.addEventListener(evt, () => SoundFX.unlock(), { capture: true, passive: true });
-    });
-
-    // 2) Returning from the background / rotating / toolbar collapse: resume audio, re-measure, reset heartbeat
-    const onIOSResume = () => {
-      if (document.visibilityState === 'hidden') return;
-      SoundFX.init();
-      if (window.__setAppH) window.__setAppH();
-      lastRemoteHeartbeatTime = Date.now(); // avoids a false "friend went offline" right after app switching
-      setTimeout(handleResize, 60);
-    };
-    document.addEventListener('visibilitychange', onIOSResume);
-    window.addEventListener('pageshow', onIOSResume);
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('scroll', () => {
-        if (window.__setAppH) window.__setAppH();
-      });
-    }
-
-    // 3) Keyboard dismissed: Safari can leave the page scrolled. Snap it back.
-    document.addEventListener('focusout', () => {
-      setTimeout(() => { window.scrollTo(0, 0); handleResize(); }, 80);
-    });
-
-    if (window.IS_IOS) {
-      // 4) Block pinch-zoom of the page (iOS ignores user-scalable=no)
-      ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
-        document.addEventListener(evt, e => e.preventDefault(), { passive: false });
-      });
-
-      // 5) Store wording: Google Play -> App Store everywhere except the (platform-aware) share modal
-      const STORE_HAS = /Google Play|Play Store/;
-      const STORE_REP = /Google Play Store|Google Play|Play Store/g;
-      const iosifyStoreWording = node => {
-        if (!node) return;
-        if (node.nodeType === 3) {
-          const v = node.nodeValue;
-          if (v && STORE_HAS.test(v)) {
-            const host = node.parentElement;
-            if (host && host.closest && host.closest('#share-modal')) return;
-            node.nodeValue = v.replace(STORE_REP, 'App Store');
-          }
-          return;
-        }
-        if (node.nodeType !== 1) return;
-        if (node.closest && node.closest('#share-modal')) return;
-        const tag = node.tagName;
-        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') return;
-        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
-        let n;
-        while ((n = walker.nextNode())) iosifyStoreWording(n);
-      };
-      new MutationObserver(muts => {
-        for (const m of muts) {
-          if (m.type === 'characterData') iosifyStoreWording(m.target);
-          else m.addedNodes.forEach(iosifyStoreWording);
-        }
-      }).observe(document.body, { childList: true, subtree: true, characterData: true });
-      iosifyStoreWording(document.body);
-
-      // 6) Home-Screen icon (iOS needs a PNG apple-touch-icon; generate one so no extra file is required)
-      try {
-        const ic = document.createElement('canvas');
-        ic.width = ic.height = 180;
-        const g = ic.getContext('2d');
-        const bg = g.createRadialGradient(90, 30, 10, 90, 90, 130);
-        bg.addColorStop(0, '#1e293b');
-        bg.addColorStop(1, '#090d16');
-        g.fillStyle = bg;
-        g.fillRect(0, 0, 180, 180);
-        g.font = '800 84px -apple-system, Helvetica, Arial, sans-serif';
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.fillStyle = '#38bdf8';
-        g.fillText('X', 56, 94);
-        g.fillStyle = '#fb923c';
-        g.fillText('O', 126, 94);
-        g.fillStyle = '#64748b';
-        g.beginPath();
-        g.arc(91, 94, 4, 0, Math.PI * 2);
-        g.fill();
-        const link = document.createElement('link');
-        link.rel = 'apple-touch-icon';
-        link.href = ic.toDataURL('image/png');
-        document.head.appendChild(link);
-      } catch (e) {}
-    }
 
     window.onload = () => {
       // 1. Automatic Subscription-Entitlement Check on Startup
@@ -6622,7 +6948,6 @@ ${body}`;
       if (nativeApp && typeof nativeApp.checkSubscriptionEntitlement === 'function') {
         try { nativeApp.checkSubscriptionEntitlement(); } catch (e) {}
       }
-      if (IOSNative.available()) IOSNative.post('checkSubscriptionEntitlement');
 
       updateShareUrlDisplay();
       updateAchievementsUI();
