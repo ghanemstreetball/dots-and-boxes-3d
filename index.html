@@ -4411,6 +4411,19 @@
       });
     }
 
+    // TURN relay (Metered) so Android <-> iPhone works across different networks / cellular
+    const ICE_CONFIG = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun.relay.metered.ca:80' },
+        { urls: 'turn:global.relay.metered.ca:80', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' },
+        { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' },
+        { urls: 'turn:global.relay.metered.ca:443', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' },
+        { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: 'd7e56683b72580d32267d894', credential: 'SASJnaXoMCq8nBQR' }
+      ],
+      sdpSemantics: 'unified-plan'
+    };
+
     document.getElementById('btn-create-room').addEventListener('click', () => {
       if (typeof Peer === 'undefined') {
         onlineStatusText.textContent = 'Live connection network unavailable. Please check your internet connection.';
@@ -4421,7 +4434,7 @@
       const peerId = `dotsboxes3d-xo-${code}`;
       onlineStatusText.textContent = `Creating Room ${code}...`;
 
-      const peer = new Peer(peerId);
+      const peer = new Peer(peerId, { config: ICE_CONFIG });
       state.online.peer = peer;
       state.online.roomCode = code;
 
@@ -4456,12 +4469,17 @@
       }
       disconnectOnline();
       onlineStatusText.textContent = `Connecting to Room ${raw}...`;
-      const peer = new Peer();
+      const peer = new Peer(undefined, { config: ICE_CONFIG });
       state.online.peer = peer;
 
       peer.on('open', () => {
         const conn = peer.connect(`dotsboxes3d-xo-${raw}`, { reliable: true });
         setupDataConnection(conn, 2, raw);
+        setTimeout(() => {
+          if (!state.online.active && state.online.peer === peer) {
+            onlineStatusText.textContent = `Could not connect to Room ${raw} in time. Check the code, make sure your friend's room is still open, and try again.`;
+          }
+        }, 20000);
       });
 
       peer.on('error', () => {
