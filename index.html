@@ -1468,16 +1468,24 @@
         roomCode: null,
         peer: null,
         conn: null,
+        connId: null,
         sessionToken: null,
         matchId: null,
         moveNumber: 0,
         isReconnecting: false,
         reconnectGraceTimer: null,
+        reconnectTimer: null,
         reconnectAttempts: 0,
         handshakeComplete: false,
+        handshakeTimer: null,
+        guestConnectTimeout: null,
+        roomIdleTimer: null,
         rematchRequestedBy: null, // 1 or 2
+        rematchExpiryTimer: null,
         pendingRestartConfirmation: false,
-        pendingRestartTimer: null
+        pendingRestartTimer: null,
+        guestSlotReserved: false,
+        guestPeerId: null
       }
     };
 
@@ -1922,28 +1930,22 @@
     // MULTIPLAYER STATE INTEGRITY & CHECKSUM HELPERS
     // =========================================================================
     function generateCryptographicToken(byteLength = 16) {
-      const bytes = new Uint8Array(byteLength);
-      if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-        window.crypto.getRandomValues(bytes);
-      } else {
-        for (let i = 0; i < byteLength; i++) {
-          bytes[i] = Math.floor(Math.random() * 256);
-        }
+      if (typeof window === 'undefined' || !window.crypto || !window.crypto.getRandomValues) {
+        throw new Error('Cryptographic random generation is not supported on this device/environment.');
       }
+      const bytes = new Uint8Array(byteLength);
+      window.crypto.getRandomValues(bytes);
       return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
     }
 
     function generate8CharRoomCode() {
       // 32 unambiguous characters (excludes easily confused 0/O, 1/I)
       const charset = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-      const bytes = new Uint8Array(8);
-      if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-        window.crypto.getRandomValues(bytes);
-      } else {
-        for (let i = 0; i < 8; i++) {
-          bytes[i] = Math.floor(Math.random() * 256);
-        }
+      if (typeof window === 'undefined' || !window.crypto || !window.crypto.getRandomValues) {
+        throw new Error('Cryptographic random generation is not supported on this device/environment.');
       }
+      const bytes = new Uint8Array(8);
+      window.crypto.getRandomValues(bytes);
       let code = '';
       for (let i = 0; i < 8; i++) {
         code += charset[bytes[i] % charset.length];
@@ -1994,11 +1996,33 @@
     }
 
     function applyFullGameState(fullState) {
-      if (!fullState || typeof fullState !== 'object') return;
+      if (!fullState || typeof fullState !== 'object') return false;
+      if (fullState.sessionToken && state.online.sessionToken && fullState.sessionToken !== state.online.sessionToken) {
+        console.warn('Rejected fullState with mismatched sessionToken');
+        return false;
+      }
+
+      const N = [4, 5, 6].includes(fullState.gridSize) ? fullState.gridSize : state.gridSize;
+
+      // Deep structural validation before mutating local state
+      if (!Array.isArray(fullState.hLines) || fullState.hLines.length !== N) return false;
+      if (!Array.isArray(fullState.vLines) || fullState.vLines.length !== N - 1) return false;
+      if (!Array.isArray(fullState.boxes) || fullState.boxes.length !== N - 1) return false;
+
+      for (let r = 0; r < N; r++) {
+        if (!Array.isArray(fullState.hLines[r]) || fullState.hLines[r].length !== N - 1) return false;
+      }
+      for (let r = 0; r < N - 1; r++) {
+        if (!Array.isArray(fullState.vLines[r]) || fullState.vLines[r].length !== N) return false;
+        if (!Array.isArray(fullState.boxes[r]) || fullState.boxes[r].length !== N - 1) return false;
+      }
+      if (!fullState.scores || typeof fullState.scores[1] !== 'number' || typeof fullState.scores[2] !== 'number') return false;
+      if (fullState.currentPlayer !== 1 && fullState.currentPlayer !== 2) return false;
+
+      // Apply validated state
       if (fullState.matchId) state.online.matchId = fullState.matchId;
       if (fullState.sessionToken) state.online.sessionToken = fullState.sessionToken;
 
-      const N = [4, 5, 6].includes(fullState.gridSize) ? fullState.gridSize : state.gridSize;
       state.gridSize = N;
       setGridButtonActive(N);
 
@@ -2013,24 +2037,14 @@
       if (fullState.p2Name) state.p2CustomName = fullState.p2Name;
       applyPlayerColors(false);
 
-      if (Array.isArray(fullState.hLines)) {
-        state.hLines = fullState.hLines.map(r => [...r]);
-      }
-      if (Array.isArray(fullState.vLines)) {
-        state.vLines = fullState.vLines.map(r => [...r]);
-      }
-      if (Array.isArray(fullState.boxes)) {
-        state.boxes = fullState.boxes.map(r => [...r]);
-      }
-      if (fullState.scores) {
-        state.scores = { 1: fullState.scores[1] || 0, 2: fullState.scores[2] || 0 };
-      }
-      if (fullState.currentPlayer === 1 || fullState.currentPlayer === 2) {
-        state.currentPlayer = fullState.currentPlayer;
-      }
+      state.hLines = fullState.hLines.map(r => [...r]);
+      state.vLines = fullState.vLines.map(r => [...r]);
+      state.boxes = fullState.boxes.map(r => [...r]);
+      state.scores = { 1: Math.max(0, fullState.scores[1]), 2: Math.max(0, fullState.scores[2]) };
+      state.currentPlayer = fullState.currentPlayer;
       state.lastEdge = fullState.lastEdge ? { ...fullState.lastEdge } : null;
       state.gameOver = Boolean(fullState.gameOver);
-      state.online.moveNumber = typeof fullState.moveNumber === 'number' ? fullState.moveNumber : 0;
+      state.online.moveNumber = (typeof fullState.moveNumber === 'number' && Number.isInteger(fullState.moveNumber)) ? Math.max(0, fullState.moveNumber) : 0;
       state.onlineUndoUsedThisTurn = Boolean(fullState.onlineUndoUsedThisTurn);
 
       build3DBoard();
@@ -2052,13 +2066,18 @@
       } else {
         hideVictoryModal();
       }
+      return true;
     }
 
     function startOnlineRematch() {
       if (state.online.role !== 1) return;
-      state.online.matchId = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      state.online.matchId = 'm_' + Date.now() + '_' + generateCryptographicToken(4);
       state.online.moveNumber = 0;
       state.online.rematchRequestedBy = null;
+      if (state.online.rematchExpiryTimer) {
+        clearTimeout(state.online.rematchExpiryTimer);
+        state.online.rematchExpiryTimer = null;
+      }
 
       const playAgainBtn = document.getElementById('modal-play-again');
       if (playAgainBtn) {
@@ -2090,7 +2109,6 @@
         setTimeout(() => toast.classList.add('hidden'), 3500);
       }
     }
-
     // =========================================================================
     // GAME LOGIC & STATE MANAGEMENT
     // =========================================================================
@@ -3556,6 +3574,7 @@
         if (state.online.active && state.online.role === 1 && state.online.conn && state.online.conn.open) {
           state.online.conn.send({
             type: 'sync-board-config',
+            sessionToken: state.online.sessionToken,
             gridSize: size,
             boardScale: Math.round(state.boardScale * 100),
             p1ColorIdx: state.p1ColorIdx,
@@ -3630,6 +3649,7 @@
       if (syncToRemote && state.online.active && state.online.role === 1 && state.online.conn && state.online.conn.open) {
         state.online.conn.send({
           type: 'color',
+          sessionToken: state.online.sessionToken,
           p1ColorIdx: state.p1ColorIdx,
           p2ColorIdx: state.p2ColorIdx
         });
@@ -3999,6 +4019,12 @@
       if (state.online.active) {
         if (state.online.role === 2) {
           showHostControlNotice('Only Room Host (Player 1) can restart the board.');
+          if (state.online.conn && state.online.conn.open) {
+            state.online.conn.send({
+              type: 'restart-request',
+              sessionToken: state.online.sessionToken
+            });
+          }
           return;
         }
 
@@ -4024,9 +4050,13 @@
 
         // Host restarts match cleanly
         SoundFX.dotSelect();
-        state.online.matchId = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        state.online.matchId = 'm_' + Date.now() + '_' + generateCryptographicToken(4);
         state.online.moveNumber = 0;
         state.online.rematchRequestedBy = null;
+        if (state.online.rematchExpiryTimer) {
+          clearTimeout(state.online.rematchExpiryTimer);
+          state.online.rematchExpiryTimer = null;
+        }
         initGame(state.gridSize);
 
         if (state.online.conn && state.online.conn.open) {
@@ -4244,11 +4274,24 @@
         playAgainBtn.disabled = true;
         SoundFX.dotSelect();
 
+        if (state.online.rematchExpiryTimer) clearTimeout(state.online.rematchExpiryTimer);
+        state.online.rematchExpiryTimer = setTimeout(() => {
+          if (state.online.rematchRequestedBy === myRole) {
+            state.online.rematchRequestedBy = null;
+            if (playAgainBtn) {
+              playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+              playAgainBtn.disabled = false;
+              playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+            }
+          }
+        }, 30000);
+
         const toast = document.getElementById('selection-toast');
         const msgEl = document.getElementById('selection-msg');
-        if (msgEl) msgEl.textContent = '🎮 Rematch requested! Waiting for opponent to accept...';
+        if (msgEl) msgEl.textContent = '🎮 Rematch requested! Waiting for opponent to accept (30s)...';
         if (toast) {
           toast.classList.remove('hidden');
+          setTimeout(() => toast.classList.add('hidden'), 4000);
         }
 
         if (state.online.conn && state.online.conn.open) {
@@ -4303,7 +4346,11 @@
     window.addEventListener('beforeunload', () => {
       if (state.online.active && state.online.conn && state.online.conn.open) {
         try {
-          state.online.conn.send({ type: 'peer-leave', role: state.online.role });
+          state.online.conn.send({
+            type: 'peer-leave',
+            sessionToken: state.online.sessionToken,
+            role: state.online.role
+          });
         } catch (e) {}
       }
     });
@@ -4539,15 +4586,24 @@
           stopOnlineHeartbeat();
           return;
         }
-
-        // Send periodic heartbeat ping
         try {
-          state.online.conn.send({ type: 'heartbeat-ping', time: Date.now() });
+          state.online.conn.send({
+            type: 'heartbeat-ping',
+            sessionToken: state.online.sessionToken,
+            time: Date.now()
+          });
         } catch (e) {}
 
         const elapsedSincePing = Date.now() - lastRemoteHeartbeatTime;
 
-        // If friend switched to a different app on their phone, keep connection alive!
+        // If silence exceeds 35s, trigger temporary disconnect recovery
+        if (elapsedSincePing > 35000) {
+          console.warn('Heartbeat silence exceeded 35s. Triggering disconnect handling.');
+          const remoteRole = state.online.role === 1 ? 2 : 1;
+          handleTemporaryDisconnect(remoteRole);
+          return;
+        }
+
         // Display "In Background" indicator while waiting for them to return without disconnecting
         if (elapsedSincePing > 6000) {
           const remoteRole = state.online.role === 1 ? 2 : 1;
@@ -4558,7 +4614,6 @@
           } else {
             updatePlayerOnlineBadges('background', true, `Friend is in another app (${awayLabel}) — connection stays live!`);
           }
-          // Do NOT disconnect! Channel remains ready for when they switch back.
         } else {
           // Healthy active connection
           updatePlayerOnlineBadges(true, true);
@@ -4577,6 +4632,26 @@
       stopOnlineHeartbeat();
       clearReconnectTimer();
 
+      if (state.online.reconnectTimer) {
+        clearTimeout(state.online.reconnectTimer);
+        state.online.reconnectTimer = null;
+      }
+      if (state.online.handshakeTimer) {
+        clearTimeout(state.online.handshakeTimer);
+        state.online.handshakeTimer = null;
+      }
+      if (state.online.guestConnectTimeout) {
+        clearTimeout(state.online.guestConnectTimeout);
+        state.online.guestConnectTimeout = null;
+      }
+      if (state.online.roomIdleTimer) {
+        clearTimeout(state.online.roomIdleTimer);
+        state.online.roomIdleTimer = null;
+      }
+      if (state.online.rematchExpiryTimer) {
+        clearTimeout(state.online.rematchExpiryTimer);
+        state.online.rematchExpiryTimer = null;
+      }
       if (state.online.pendingRestartTimer) {
         clearTimeout(state.online.pendingRestartTimer);
         state.online.pendingRestartTimer = null;
@@ -4606,6 +4681,7 @@
       state.online.role = null;
       state.online.roomCode = null;
       state.online.conn = null;
+      state.online.connId = null;
       state.online.peer = null;
       state.online.sessionToken = null;
       state.online.matchId = null;
@@ -4615,6 +4691,8 @@
       state.online.handshakeComplete = false;
       state.online.rematchRequestedBy = null;
       state.online.pendingRestartConfirmation = false;
+      state.online.guestSlotReserved = false;
+      state.online.guestPeerId = null;
 
       const playAgainBtn = document.getElementById('modal-play-again');
       if (playAgainBtn) {
@@ -4673,19 +4751,28 @@
     function triggerGuestAutoReconnect() {
       if (state.online.role !== 2 || !state.online.roomCode || !state.online.isReconnecting) return;
       state.online.reconnectAttempts = (state.online.reconnectAttempts || 0) + 1;
-      if (state.online.reconnectAttempts > 8) return;
+      if (state.online.reconnectAttempts > 8) {
+        console.warn('Guest reconnection attempts exceeded limit (8).');
+        return;
+      }
 
-      setTimeout(() => {
+      if (state.online.reconnectTimer) clearTimeout(state.online.reconnectTimer);
+      state.online.reconnectTimer = setTimeout(() => {
         if (!state.online.isReconnecting || !state.online.roomCode) return;
         try {
           if (!state.online.peer || state.online.peer.destroyed) {
             state.online.peer = new Peer();
             state.online.peer.on('open', () => {
-              const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode}`, { reliable: true });
+              if (!state.online.isReconnecting || !state.online.roomCode) return;
+              const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode.toLowerCase()}`, { reliable: true });
               setupDataConnection(newConn, 2, state.online.roomCode, true);
             });
+            state.online.peer.on('error', err => {
+              console.warn('Guest peer error during reconnect:', err);
+              triggerGuestAutoReconnect();
+            });
           } else {
-            const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode}`, { reliable: true });
+            const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode.toLowerCase()}`, { reliable: true });
             setupDataConnection(newConn, 2, state.online.roomCode, true);
           }
         } catch (e) {
@@ -4695,11 +4782,19 @@
     }
 
     function setupDataConnection(conn, role, roomCode, isReconnect = false) {
+      if (state.online.conn && state.online.conn !== conn) {
+        try { state.online.conn.close(); } catch (e) {}
+      }
+
+      const connId = 'conn_' + Date.now() + '_' + generateCryptographicToken(4);
+      conn._connId = connId;
       state.online.conn = conn;
+      state.online.connId = connId;
       state.online.role = role;
       state.online.roomCode = roomCode;
 
       conn.on('open', () => {
+        if (state.online.connId !== connId) return;
         const remoteRole = role === 1 ? 2 : 1;
 
         if (role === 1) {
@@ -4707,6 +4802,7 @@
           if (isReconnect || state.online.isReconnecting) {
             state.online.active = true;
             state.online.isReconnecting = false;
+            state.online.reconnectAttempts = 0;
             clearReconnectTimer();
             startOnlineHeartbeat();
             updatePlayerOnlineBadges(true, true);
@@ -4750,374 +4846,92 @@
       });
 
       conn.on('data', data => {
+        if (state.online.connId !== connId) return; // Stale connection handler
         if (!data || typeof data !== 'object') return;
         lastRemoteHeartbeatTime = Date.now();
 
-        // If connection was in reconnecting state, mark restored
-        if (state.online.isReconnecting) {
-          state.online.isReconnecting = false;
-          clearReconnectTimer();
-          startOnlineHeartbeat();
-        }
-        updatePlayerOnlineBadges(true, true);
+        try {
+          const remoteRole = role === 1 ? 2 : 1;
 
-        const remoteRole = role === 1 ? 2 : 1;
+          // 1. Whitelist initial handshake messages; require session token for all other gameplay messages
+          const INITIAL_HANDSHAKE_MESSAGES = [
+            'room-full',
+            'join-rejected',
+            'handshake-join',
+            'handshake-challenge',
+            'handshake-response',
+            'reconnect-request',
+            'reconnect-ack'
+          ];
 
-        // 1. Room Full and Unauthorized Token checks
-        if (data.type === 'room-full') {
-          onlineStatusText.textContent = 'This room is already full (2/2 players).';
-          disconnectOnline(false);
-          return;
-        }
-
-        if (data.type === 'join-rejected') {
-          onlineStatusText.textContent = data.reason || 'Unauthorized: Invalid or expired invitation token.';
-          disconnectOnline(false);
-          const toast = document.getElementById('selection-toast');
-          const msgEl = document.getElementById('selection-msg');
-          if (msgEl) msgEl.textContent = `❌ ${data.reason || 'Join rejected by host.'}`;
-          if (toast) {
-            toast.classList.remove('hidden');
-            setTimeout(() => toast.classList.add('hidden'), 4500);
-          }
-          return;
-        }
-
-        // 1.5 Handshake Join (Host receives from Guest)
-        if (data.type === 'handshake-join' && role === 1) {
-          if (data.guestName) {
-            state.p2CustomName = data.guestName;
-          }
-          conn.send({
-            type: 'handshake-challenge',
-            sessionToken: state.online.sessionToken,
-            matchId: state.online.matchId,
-            gridSize: state.gridSize,
-            p1ColorIdx: state.p1ColorIdx,
-            p2ColorIdx: state.p2ColorIdx,
-            p1Name: (state.p1CustomName || '').trim() || 'Player 1'
-          });
-          return;
-        }
-
-        // 2. Handshake Challenge (Guest receives from Host)
-        if (data.type === 'handshake-challenge' && role === 2) {
-          state.online.sessionToken = data.sessionToken;
-          state.online.matchId = data.matchId;
-          state.online.handshakeComplete = true;
-          state.online.active = true;
-          state.online.isReconnecting = false;
-          state.online.moveNumber = 0;
-          state.vsAI = false;
-          syncModeAndAIDiffUI();
-
-          const validSizes = [4, 5, 6];
-          const gSize = validSizes.includes(data.gridSize) ? data.gridSize : 5;
-          const maxColor = COLOR_PALETTE.length - 1;
-          if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
-            state.p1ColorIdx = data.p1ColorIdx;
-          }
-          if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
-            state.p2ColorIdx = data.p2ColorIdx;
-          }
-          if (data.p1Name) {
-            state.p1CustomName = data.p1Name;
+          if (!INITIAL_HANDSHAKE_MESSAGES.includes(data.type)) {
+            if (!data.sessionToken || typeof data.sessionToken !== 'string' || data.sessionToken !== state.online.sessionToken) {
+              console.warn('Rejected unauthorized gameplay message missing or invalid sessionToken:', data.type);
+              return;
+            }
           }
 
-          // Guest sets own name independently
-          const myGuestName = (localStorage.getItem('dots3d_player_name') || state.p2CustomName || '').trim() || 'Player 2';
-          state.p2CustomName = myGuestName;
-
-          applyPlayerColors(false);
-          setGridButtonActive(gSize);
-          initGame(gSize);
-
-          // Respond to handshake
-          conn.send({
-            type: 'handshake-response',
-            sessionToken: state.online.sessionToken,
-            matchId: state.online.matchId,
-            p2Name: myGuestName
-          });
-
-          setOnlineBadgeState('connected', 'Connected (Guest · P2)');
-          onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
-          SoundFX.hint();
-          startOnlineHeartbeat();
-          updatePlayerOnlineBadges(true, true);
-
-          setTimeout(() => {
-            closeOnlineModal();
-            const selToast = document.getElementById('selection-toast');
-            if (selToast) selToast.classList.remove('hidden');
-            const msgEl = document.getElementById('selection-msg');
-            if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
-            const tipRow = document.getElementById('top-board-tip-row');
-            if (tipRow) tipRow.classList.remove('hidden');
-          }, 1000);
-          return;
-        }
-
-        // 3. Handshake Response (Host receives from Guest)
-        if (data.type === 'handshake-response' && role === 1) {
-          if (data.sessionToken !== state.online.sessionToken) {
-            console.warn('Rejected handshake response with invalid session token');
-            return;
-          }
-          state.online.handshakeComplete = true;
-          state.online.active = true;
-          state.online.isReconnecting = false;
-          state.vsAI = false;
-          syncModeAndAIDiffUI();
-
-          if (data.p2Name) {
-            state.p2CustomName = data.p2Name;
-          }
-          updateHUD();
-
-          setOnlineBadgeState('connected', 'Connected (Host · P1)');
-          onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
-          SoundFX.hint();
-          startOnlineHeartbeat();
-          updatePlayerOnlineBadges(true, true);
-
-          setTimeout(() => {
-            closeOnlineModal();
-            const selToast = document.getElementById('selection-toast');
-            if (selToast) selToast.classList.remove('hidden');
-            const msgEl = document.getElementById('selection-msg');
-            if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
-            const tipRow = document.getElementById('top-board-tip-row');
-            if (tipRow) tipRow.classList.remove('hidden');
-          }, 1000);
-          return;
-        }
-
-        // 4. Reconnect Request & Ack
-        if (data.type === 'reconnect-request' && role === 1) {
-          if (data.sessionToken === state.online.sessionToken) {
-            state.online.active = true;
+          // If connection was in reconnecting state, mark restored
+          if (state.online.isReconnecting && data.type !== 'reconnect-ack') {
             state.online.isReconnecting = false;
             clearReconnectTimer();
             startOnlineHeartbeat();
-            updatePlayerOnlineBadges(true, true);
-            conn.send({
-              type: 'reconnect-ack',
-              sessionToken: state.online.sessionToken,
-              fullState: getSerializableGameState()
-            });
+          }
+          updatePlayerOnlineBadges(true, true);
+
+          // 2. Room Full and Unauthorized Token checks
+          if (data.type === 'room-full') {
+            onlineStatusText.textContent = 'This room is already full (2/2 players).';
+            disconnectOnline(false);
+            return;
+          }
+
+          if (data.type === 'join-rejected') {
+            onlineStatusText.textContent = data.reason || 'Unauthorized: Invalid or expired invitation token.';
+            disconnectOnline(false);
             const toast = document.getElementById('selection-toast');
             const msgEl = document.getElementById('selection-msg');
-            if (msgEl) msgEl.textContent = '⚡ Guest reconnected! Match resumed.';
+            if (msgEl) msgEl.textContent = `❌ ${data.reason || 'Join rejected by host.'}`;
             if (toast) {
               toast.classList.remove('hidden');
-              setTimeout(() => toast.classList.add('hidden'), 3500);
+              setTimeout(() => toast.classList.add('hidden'), 4500);
             }
+            return;
           }
-          return;
-        }
 
-        if (data.type === 'reconnect-ack' && role === 2) {
-          if (data.sessionToken === state.online.sessionToken) {
+          // 3. Handshake Join (Host receives from Guest)
+          if (data.type === 'handshake-join' && role === 1) {
+            if (data.guestName) {
+              state.p2CustomName = data.guestName;
+            }
+            conn.send({
+              type: 'handshake-challenge',
+              sessionToken: state.online.sessionToken,
+              matchId: state.online.matchId,
+              gridSize: state.gridSize,
+              p1ColorIdx: state.p1ColorIdx,
+              p2ColorIdx: state.p2ColorIdx,
+              p1Name: (state.p1CustomName || '').trim() || 'Player 1'
+            });
+            return;
+          }
+
+          // 4. Handshake Challenge (Guest receives from Host)
+          if (data.type === 'handshake-challenge' && role === 2) {
+            if (state.online.guestConnectTimeout) {
+              clearTimeout(state.online.guestConnectTimeout);
+              state.online.guestConnectTimeout = null;
+            }
+            state.online.sessionToken = data.sessionToken;
+            state.online.matchId = data.matchId;
+            state.online.handshakeComplete = true;
             state.online.active = true;
             state.online.isReconnecting = false;
-            clearReconnectTimer();
-            startOnlineHeartbeat();
-            applyFullGameState(data.fullState);
-            updatePlayerOnlineBadges(true, true);
-            const toast = document.getElementById('selection-toast');
-            const msgEl = document.getElementById('selection-msg');
-            if (msgEl) msgEl.textContent = '⚡ Reconnected to match! Game state synchronized.';
-            if (toast) {
-              toast.classList.remove('hidden');
-              setTimeout(() => toast.classList.add('hidden'), 3500);
-            }
-          }
-          return;
-        }
+            state.online.reconnectAttempts = 0;
+            state.online.moveNumber = 0;
+            state.vsAI = false;
+            syncModeAndAIDiffUI();
 
-        // Validate session token for all in-game gameplay messages
-        if (state.online.sessionToken && data.sessionToken && data.sessionToken !== state.online.sessionToken) {
-          console.warn('Rejected message with mismatched sessionToken:', data.type);
-          return;
-        }
-
-        // 5. Heartbeat & Life-Cycle
-        if (data.type === 'heartbeat-ping') {
-          try { conn.send({ type: 'heartbeat-pong', time: Date.now() }); } catch (e) {}
-        } else if (data.type === 'heartbeat-pong' || data.type === 'peer-resume') {
-          lastRemoteHeartbeatTime = Date.now();
-          updatePlayerOnlineBadges(true, true);
-        } else if (data.type === 'peer-leave') {
-          disconnectOnline(true, remoteRole, Boolean(data.permanent));
-        }
-
-        // 6. Move Synchronization & Sequential Validation
-        else if (data.type === 'move') {
-          // Reject moves from wrong match
-          if (data.matchId && state.online.matchId && data.matchId !== state.online.matchId) {
-            console.warn('Rejected move from different matchId:', data.matchId, state.online.matchId);
-            return;
-          }
-
-          // Duplicate or obsolete move
-          if (typeof data.moveNumber === 'number' && data.moveNumber <= state.online.moveNumber) {
-            return;
-          }
-
-          // Out of sequence move gap: request state sync
-          if (typeof data.moveNumber === 'number' && data.moveNumber > state.online.moveNumber + 1) {
-            console.warn('Move sequence gap detected! Local:', state.online.moveNumber, 'Incoming:', data.moveNumber);
-            if (conn && conn.open) {
-              conn.send({
-                type: 'request-state-sync',
-                sessionToken: state.online.sessionToken,
-                reason: 'move-gap'
-              });
-            }
-            return;
-          }
-
-          // Turn validation (simultaneous move defense)
-          if (state.currentPlayer !== remoteRole) {
-            console.warn('Simultaneous move conflict: incoming move when not remote turn');
-            if (role === 1) {
-              // Host is arbiter: reject guest move and broadcast authoritative state
-              if (conn && conn.open) {
-                conn.send({
-                  type: 'move-rejected',
-                  sessionToken: state.online.sessionToken,
-                  fullState: getSerializableGameState()
-                });
-              }
-            } else {
-              // Guest defers to Host: request sync
-              if (conn && conn.open) {
-                conn.send({
-                  type: 'request-state-sync',
-                  sessionToken: state.online.sessionToken,
-                  reason: 'simultaneous-move'
-                });
-              }
-            }
-            return;
-          }
-
-          const eType = data.edgeType;
-          const r = parseInt(data.r, 10);
-          const c = parseInt(data.c, 10);
-          const N = state.gridSize;
-
-          if (eType !== 'h' && eType !== 'v') return;
-          if (eType === 'h' && (isNaN(r) || isNaN(c) || r < 0 || r >= N || c < 0 || c >= N - 1)) return;
-          if (eType === 'v' && (isNaN(r) || isNaN(c) || r < 0 || r >= N - 1 || c < 0 || c >= N)) return;
-
-          if (isEdgeClaimed(eType, r, c)) {
-            console.warn('Edge already claimed. Requesting state sync.');
-            if (conn && conn.open) {
-              conn.send({
-                type: 'request-state-sync',
-                sessionToken: state.online.sessionToken,
-                reason: 'duplicate-edge'
-              });
-            }
-            return;
-          }
-
-          placeEdge(eType, r, c, true);
-          state.online.moveNumber = typeof data.moveNumber === 'number' ? data.moveNumber : state.online.moveNumber + 1;
-
-          // Checksum state verification
-          const localChecksum = getBoardStateChecksum();
-          if (data.stateChecksum && localChecksum !== data.stateChecksum) {
-            console.warn('Board state checksum mismatch after move! Requesting sync.');
-            if (conn && conn.open) {
-              conn.send({
-                type: 'request-state-sync',
-                sessionToken: state.online.sessionToken,
-                reason: 'checksum-mismatch'
-              });
-            }
-          }
-        }
-
-        // 7. Full State Synchronization Requests & Responses
-        else if (data.type === 'request-state-sync') {
-          if (role === 1 && conn && conn.open) {
-            conn.send({
-              type: 'sync-full-state',
-              sessionToken: state.online.sessionToken,
-              fullState: getSerializableGameState()
-            });
-          }
-        } else if (data.type === 'sync-full-state' || data.type === 'move-rejected') {
-          if (role === 2 && data.fullState) {
-            applyFullGameState(data.fullState);
-          }
-        }
-
-        // 8. Online Undo Validation & Synchronization
-        else if (data.type === 'online-undo') {
-          executeOnlineUndo(data.role, true, data.moveNumber, data.stateChecksum);
-        }
-
-        // 9. Rematch & Restart Protocols
-        else if (data.type === 'rematch-request') {
-          state.online.rematchRequestedBy = data.requesterRole;
-          const playAgainBtn = document.getElementById('modal-play-again');
-          if (playAgainBtn) {
-            playAgainBtn.textContent = 'Accept Rematch! 🎮';
-            playAgainBtn.disabled = false;
-            playAgainBtn.classList.add('ring-2', 'ring-emerald-400', 'animate-pulse');
-          }
-          const toast = document.getElementById('selection-toast');
-          const msgEl = document.getElementById('selection-msg');
-          if (msgEl) msgEl.textContent = '🎮 Opponent wants a rematch! Tap "Accept Rematch" to play!';
-          if (toast) {
-            toast.classList.remove('hidden');
-            setTimeout(() => toast.classList.add('hidden'), 4500);
-          }
-        } else if (data.type === 'rematch-accepted' && role === 1) {
-          startOnlineRematch();
-        } else if (data.type === 'rematch-start' || data.type === 'restart-match') {
-          state.online.matchId = data.matchId;
-          state.online.moveNumber = 0;
-          state.online.rematchRequestedBy = null;
-
-          const playAgainBtn = document.getElementById('modal-play-again');
-          if (playAgainBtn) {
-            playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
-            playAgainBtn.disabled = false;
-            playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
-          }
-
-          if (typeof data.p1ColorIdx === 'number') state.p1ColorIdx = data.p1ColorIdx;
-          if (typeof data.p2ColorIdx === 'number') state.p2ColorIdx = data.p2ColorIdx;
-          if (data.p1Name) state.p1CustomName = data.p1Name;
-          if (data.p2Name) state.p2CustomName = data.p2Name;
-          applyPlayerColors(false);
-
-          const validSizes = [4, 5, 6];
-          const gSize = validSizes.includes(data.gridSize) ? data.gridSize : state.gridSize;
-          setGridButtonActive(gSize);
-          initGame(gSize);
-
-          const toast = document.getElementById('selection-toast');
-          const msgEl = document.getElementById('selection-msg');
-          if (msgEl) {
-            msgEl.textContent = data.type === 'rematch-start'
-              ? '🎮 Rematch started! Both players ready.'
-              : '🔄 Room Host restarted the match.';
-          }
-          if (toast) {
-            toast.classList.remove('hidden');
-            setTimeout(() => toast.classList.add('hidden'), 3500);
-          }
-        }
-
-        // 10. Board Configuration & Color Authority (Host-Only)
-        else if (data.type === 'sync-board-config') {
-          if (role === 2) {
             const validSizes = [4, 5, 6];
             const gSize = validSizes.includes(data.gridSize) ? data.gridSize : 5;
             const maxColor = COLOR_PALETTE.length - 1;
@@ -5127,56 +4941,526 @@
             if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
               state.p2ColorIdx = data.p2ColorIdx;
             }
-            if (data.p1Name) state.p1CustomName = data.p1Name;
+            if (data.p1Name) {
+              state.p1CustomName = data.p1Name;
+            }
+
+            // Guest sets own name independently
+            const myGuestName = (localStorage.getItem('dots3d_player_name') || state.p2CustomName || '').trim() || 'Player 2';
+            state.p2CustomName = myGuestName;
+
             applyPlayerColors(false);
+            setGridButtonActive(gSize);
+            initGame(gSize);
+
+            // Respond to handshake
+            conn.send({
+              type: 'handshake-response',
+              sessionToken: state.online.sessionToken,
+              matchId: state.online.matchId,
+              p2Name: myGuestName
+            });
+
+            setOnlineBadgeState('connected', 'Connected (Guest · P2)');
+            onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
+            SoundFX.hint();
+            startOnlineHeartbeat();
+            updatePlayerOnlineBadges(true, true);
+
+            setTimeout(() => {
+              closeOnlineModal();
+              const selToast = document.getElementById('selection-toast');
+              if (selToast) selToast.classList.remove('hidden');
+              const msgEl = document.getElementById('selection-msg');
+              if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
+              const tipRow = document.getElementById('top-board-tip-row');
+              if (tipRow) tipRow.classList.remove('hidden');
+            }, 1000);
+            return;
+          }
+
+          // 5. Handshake Response (Host receives from Guest)
+          if (data.type === 'handshake-response' && role === 1) {
+            if (data.sessionToken !== state.online.sessionToken) {
+              console.warn('Rejected handshake response with invalid session token');
+              return;
+            }
+            if (state.online.handshakeTimer) {
+              clearTimeout(state.online.handshakeTimer);
+              state.online.handshakeTimer = null;
+            }
+            if (state.online.roomIdleTimer) {
+              clearTimeout(state.online.roomIdleTimer);
+              state.online.roomIdleTimer = null;
+            }
+            state.online.handshakeComplete = true;
+            state.online.guestSlotReserved = true;
+            state.online.active = true;
+            state.online.isReconnecting = false;
+            state.online.reconnectAttempts = 0;
+            state.vsAI = false;
+            syncModeAndAIDiffUI();
+
+            if (data.p2Name) {
+              state.p2CustomName = data.p2Name;
+            }
+            updateHUD();
+
+            setOnlineBadgeState('connected', 'Connected (Host · P1)');
+            onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
+            SoundFX.hint();
+            startOnlineHeartbeat();
+            updatePlayerOnlineBadges(true, true);
+
+            setTimeout(() => {
+              closeOnlineModal();
+              const selToast = document.getElementById('selection-toast');
+              if (selToast) selToast.classList.remove('hidden');
+              const msgEl = document.getElementById('selection-msg');
+              if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
+              const tipRow = document.getElementById('top-board-tip-row');
+              if (tipRow) tipRow.classList.remove('hidden');
+            }, 1000);
+            return;
+          }
+
+          // 6. Reconnect Request & Ack
+          if (data.type === 'reconnect-request' && role === 1) {
+            if (data.sessionToken === state.online.sessionToken && data.role === 2) {
+              state.online.active = true;
+              state.online.isReconnecting = false;
+              state.online.reconnectAttempts = 0;
+              clearReconnectTimer();
+              startOnlineHeartbeat();
+              updatePlayerOnlineBadges(true, true);
+              conn.send({
+                type: 'reconnect-ack',
+                sessionToken: state.online.sessionToken,
+                fullState: getSerializableGameState()
+              });
+              const toast = document.getElementById('selection-toast');
+              const msgEl = document.getElementById('selection-msg');
+              if (msgEl) msgEl.textContent = '⚡ Guest reconnected! Match resumed.';
+              if (toast) {
+                toast.classList.remove('hidden');
+                setTimeout(() => toast.classList.add('hidden'), 3500);
+              }
+            } else {
+              console.warn('Rejected reconnect-request: invalid sessionToken or role');
+              conn.send({ type: 'room-full', error: 'Authentication failed: Invalid session token.' });
+              conn.close();
+            }
+            return;
+          }
+
+          if (data.type === 'reconnect-ack' && role === 2) {
+            if (data.sessionToken === state.online.sessionToken && data.fullState) {
+              const applied = applyFullGameState(data.fullState);
+              if (applied) {
+                state.online.active = true;
+                state.online.isReconnecting = false;
+                state.online.reconnectAttempts = 0;
+                clearReconnectTimer();
+                startOnlineHeartbeat();
+                updatePlayerOnlineBadges(true, true);
+                const toast = document.getElementById('selection-toast');
+                const msgEl = document.getElementById('selection-msg');
+                if (msgEl) msgEl.textContent = '⚡ Reconnected to match! Game state synchronized.';
+                if (toast) {
+                  toast.classList.remove('hidden');
+                  setTimeout(() => toast.classList.add('hidden'), 3500);
+                }
+              } else {
+                console.warn('Failed to apply full state during reconnect-ack');
+              }
+            }
+            return;
+          }
+
+          // 7. Heartbeat & Life-Cycle
+          if (data.type === 'heartbeat-ping') {
+            try {
+              conn.send({
+                type: 'heartbeat-pong',
+                sessionToken: state.online.sessionToken,
+                time: Date.now()
+              });
+            } catch (e) {}
+            return;
+          } else if (data.type === 'heartbeat-pong' || data.type === 'peer-resume') {
+            lastRemoteHeartbeatTime = Date.now();
+            updatePlayerOnlineBadges(true, true);
+            return;
+          } else if (data.type === 'peer-leave') {
+            disconnectOnline(true, remoteRole, Boolean(data.permanent));
+            return;
+          }
+
+          // 8. Move Synchronization & Sequential Validation
+          else if (data.type === 'move') {
+            // Reject moves if match is already over
+            if (state.gameOver) {
+              console.warn('Rejected move: game is already over');
+              return;
+            }
+
+            // Reject moves from wrong match
+            if (!data.matchId || !state.online.matchId || data.matchId !== state.online.matchId) {
+              console.warn('Rejected move: matchId mismatch', data.matchId, state.online.matchId);
+              return;
+            }
+
+            // Reject moves from wrong sender role
+            if (data.senderRole !== remoteRole) {
+              console.warn('Rejected move: senderRole mismatch', data.senderRole, remoteRole);
+              return;
+            }
+
+            // Move number validation
+            if (typeof data.moveNumber !== 'number' || !Number.isInteger(data.moveNumber)) {
+              console.warn('Rejected move: invalid moveNumber', data.moveNumber);
+              return;
+            }
+
+            // Duplicate or obsolete move: silently ignore
+            if (data.moveNumber <= state.online.moveNumber) {
+              return;
+            }
+
+            // Out of sequence move gap: request state sync
+            if (data.moveNumber > state.online.moveNumber + 1) {
+              console.warn('Move sequence gap detected! Local:', state.online.moveNumber, 'Incoming:', data.moveNumber);
+              if (conn && conn.open) {
+                conn.send({
+                  type: 'request-state-sync',
+                  sessionToken: state.online.sessionToken,
+                  reason: 'move-gap'
+                });
+              }
+              return;
+            }
+
+            // Turn validation (simultaneous move defense)
+            if (state.currentPlayer !== remoteRole) {
+              console.warn('Simultaneous move conflict: incoming move when not remote turn');
+              if (role === 1) {
+                // Host is arbiter: reject guest move and broadcast authoritative state
+                if (conn && conn.open) {
+                  conn.send({
+                    type: 'move-rejected',
+                    sessionToken: state.online.sessionToken,
+                    fullState: getSerializableGameState()
+                  });
+                }
+              } else {
+                // Guest defers to Host: request sync
+                if (conn && conn.open) {
+                  conn.send({
+                    type: 'request-state-sync',
+                    sessionToken: state.online.sessionToken,
+                    reason: 'simultaneous-move'
+                  });
+                }
+              }
+              return;
+            }
+
+            // Coordinate & type validation
+            const eType = data.edgeType;
+            if (eType !== 'h' && eType !== 'v') {
+              console.warn('Rejected move: invalid edgeType', eType);
+              return;
+            }
+
+            if (typeof data.r !== 'number' || typeof data.c !== 'number' || !Number.isInteger(data.r) || !Number.isInteger(data.c)) {
+              console.warn('Rejected move: coordinates not integers', data.r, data.c);
+              return;
+            }
+
+            const r = data.r;
+            const c = data.c;
+            const N = state.gridSize;
+
+            if (eType === 'h' && (r < 0 || r >= N || c < 0 || c >= N - 1)) {
+              console.warn('Rejected move: h-line out of bounds', r, c, N);
+              return;
+            }
+            if (eType === 'v' && (r < 0 || r >= N - 1 || c < 0 || c >= N)) {
+              console.warn('Rejected move: v-line out of bounds', r, c, N);
+              return;
+            }
+
+            if (isEdgeClaimed(eType, r, c)) {
+              console.warn('Edge already claimed. Requesting state sync.');
+              if (conn && conn.open) {
+                conn.send({
+                  type: 'request-state-sync',
+                  sessionToken: state.online.sessionToken,
+                  reason: 'duplicate-edge'
+                });
+              }
+              return;
+            }
+
+            placeEdge(eType, r, c, true);
+            state.online.moveNumber = data.moveNumber;
+
+            // Checksum state verification
+            const localChecksum = getBoardStateChecksum();
+            if (data.stateChecksum && localChecksum !== data.stateChecksum) {
+              console.warn('Board state checksum mismatch after move! Requesting sync.');
+              if (conn && conn.open) {
+                conn.send({
+                  type: 'request-state-sync',
+                  sessionToken: state.online.sessionToken,
+                  reason: 'checksum-mismatch'
+                });
+              }
+            }
+          }
+
+          // 9. Full State Synchronization Requests & Responses
+          else if (data.type === 'request-state-sync') {
+            if (role === 1 && conn && conn.open) {
+              conn.send({
+                type: 'sync-full-state',
+                sessionToken: state.online.sessionToken,
+                fullState: getSerializableGameState()
+              });
+            }
+          } else if (data.type === 'sync-full-state' || data.type === 'move-rejected') {
+            if (role === 2 && data.fullState) {
+              applyFullGameState(data.fullState);
+            }
+          }
+
+          // 10. Online Undo Validation & Synchronization
+          else if (data.type === 'online-undo') {
+            executeOnlineUndo(data.role, true, data.moveNumber, data.stateChecksum);
+          }
+
+          // 11. Rematch & Restart Protocols (Strict Host Authority)
+          else if (data.type === 'rematch-request') {
+            if (!state.gameOver) {
+              console.warn('Rejected rematch-request: game is still in progress');
+              return;
+            }
+            if (data.requesterRole !== remoteRole) {
+              console.warn('Rejected rematch-request: requesterRole mismatch');
+              return;
+            }
+
+            // If local player already requested rematch, this incoming request completes mutual consent!
+            if (state.online.rematchRequestedBy && state.online.rematchRequestedBy === role) {
+              if (role === 1) {
+                startOnlineRematch();
+              } else {
+                if (conn && conn.open) {
+                  conn.send({
+                    type: 'rematch-accepted',
+                    sessionToken: state.online.sessionToken
+                  });
+                }
+              }
+              return;
+            }
+
+            state.online.rematchRequestedBy = data.requesterRole;
+
+            if (state.online.rematchExpiryTimer) clearTimeout(state.online.rematchExpiryTimer);
+            state.online.rematchExpiryTimer = setTimeout(() => {
+              if (state.online.rematchRequestedBy === data.requesterRole) {
+                state.online.rematchRequestedBy = null;
+                const playAgainBtn = document.getElementById('modal-play-again');
+                if (playAgainBtn) {
+                  playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+                  playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+                }
+              }
+            }, 30000);
+
+            const playAgainBtn = document.getElementById('modal-play-again');
+            if (playAgainBtn) {
+              playAgainBtn.textContent = 'Accept Rematch! 🎮';
+              playAgainBtn.disabled = false;
+              playAgainBtn.classList.add('ring-2', 'ring-emerald-400', 'animate-pulse');
+            }
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = '🎮 Opponent wants a rematch! Tap "Accept Rematch" (30s) to play!';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 4500);
+            }
+          } else if (data.type === 'rematch-accepted') {
+            // Strict Host Authority: only Host receives rematch-accepted to start rematch
+            if (role === 1 && state.gameOver && state.online.rematchRequestedBy === 1) {
+              if (state.online.rematchExpiryTimer) {
+                clearTimeout(state.online.rematchExpiryTimer);
+                state.online.rematchExpiryTimer = null;
+              }
+              startOnlineRematch();
+            }
+          } else if (data.type === 'rematch-start') {
+            // Strict Host Authority: only Guest accepts rematch-start from Host
+            if (role !== 2) {
+              console.warn('Rejected unauthorized rematch-start: only Guest can receive rematch-start from Host');
+              return;
+            }
+            if (!data.matchId) return;
+
+            state.online.matchId = data.matchId;
+            state.online.moveNumber = 0;
+            state.online.rematchRequestedBy = null;
+            if (state.online.rematchExpiryTimer) {
+              clearTimeout(state.online.rematchExpiryTimer);
+              state.online.rematchExpiryTimer = null;
+            }
+
+            const playAgainBtn = document.getElementById('modal-play-again');
+            if (playAgainBtn) {
+              playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+              playAgainBtn.disabled = false;
+              playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+            }
+
+            if (typeof data.p1ColorIdx === 'number') state.p1ColorIdx = data.p1ColorIdx;
+            if (typeof data.p2ColorIdx === 'number') state.p2ColorIdx = data.p2ColorIdx;
+            if (data.p1Name) state.p1CustomName = data.p1Name;
+            if (data.p2Name) state.p2CustomName = data.p2Name;
+            applyPlayerColors(false);
+
+            const validSizes = [4, 5, 6];
+            const gSize = validSizes.includes(data.gridSize) ? data.gridSize : state.gridSize;
             setGridButtonActive(gSize);
             initGame(gSize);
 
             const toast = document.getElementById('selection-toast');
             const msgEl = document.getElementById('selection-msg');
-            if (msgEl) msgEl.textContent = `⚙️ Room Host updated board to ${gSize * gSize} Dots & synced page settings!`;
+            if (msgEl) msgEl.textContent = '🎮 Rematch started! Both players ready.';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 3500);
+            }
+          } else if (data.type === 'restart-match') {
+            // Strict Host Authority: only Guest accepts restart-match from Host
+            if (role !== 2) {
+              console.warn('Rejected unauthorized restart-match: only Guest can receive restart-match from Host');
+              return;
+            }
+            if (!data.matchId) return;
+
+            state.online.matchId = data.matchId;
+            state.online.moveNumber = 0;
+            state.online.rematchRequestedBy = null;
+            if (state.online.rematchExpiryTimer) {
+              clearTimeout(state.online.rematchExpiryTimer);
+              state.online.rematchExpiryTimer = null;
+            }
+
+            const playAgainBtn = document.getElementById('modal-play-again');
+            if (playAgainBtn) {
+              playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+              playAgainBtn.disabled = false;
+              playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+            }
+
+            if (typeof data.p1ColorIdx === 'number') state.p1ColorIdx = data.p1ColorIdx;
+            if (typeof data.p2ColorIdx === 'number') state.p2ColorIdx = data.p2ColorIdx;
+            if (data.p1Name) state.p1CustomName = data.p1Name;
+            if (data.p2Name) state.p2CustomName = data.p2Name;
+            applyPlayerColors(false);
+
+            const validSizes = [4, 5, 6];
+            const gSize = validSizes.includes(data.gridSize) ? data.gridSize : state.gridSize;
+            setGridButtonActive(gSize);
+            initGame(gSize);
+
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = '🔄 Room Host restarted the match.';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 3500);
+            }
+          } else if (data.type === 'restart-request' && role === 1) {
+            // Host receives restart request from Guest
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = '🔄 Guest requested to restart the match. Tap New Game if you agree.';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 4500);
+            }
+          }
+
+          // 12. Board Configuration & Color Authority (Host-Only)
+          else if (data.type === 'sync-board-config') {
+            if (role === 2) {
+              const validSizes = [4, 5, 6];
+              const gSize = validSizes.includes(data.gridSize) ? data.gridSize : 5;
+              const maxColor = COLOR_PALETTE.length - 1;
+              if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
+                state.p1ColorIdx = data.p1ColorIdx;
+              }
+              if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
+                state.p2ColorIdx = data.p2ColorIdx;
+              }
+              if (data.p1Name) state.p1CustomName = data.p1Name;
+              applyPlayerColors(false);
+              setGridButtonActive(gSize);
+              initGame(gSize);
+
+              const toast = document.getElementById('selection-toast');
+              const msgEl = document.getElementById('selection-msg');
+              if (msgEl) msgEl.textContent = `⚙️ Room Host updated board to ${gSize * gSize} Dots & synced page settings!`;
+              if (toast) {
+                toast.classList.remove('hidden');
+                setTimeout(() => toast.classList.add('hidden'), 3500);
+              }
+            }
+          } else if (data.type === 'color') {
+            if (role === 2) {
+              const maxColor = COLOR_PALETTE.length - 1;
+              if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
+                state.p1ColorIdx = data.p1ColorIdx;
+              }
+              if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
+                state.p2ColorIdx = data.p2ColorIdx;
+              }
+              applyPlayerColors(false);
+            }
+          }
+
+          // 13. Player Name Change Broadcast
+          else if (data.type === 'player-name') {
+            if (data.role === 1 && data.name) {
+              state.p1CustomName = data.name;
+            } else if (data.role === 2 && data.name) {
+              state.p2CustomName = data.name;
+            }
+            updateHUD();
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = `✏️ ${data.name} updated their player name!`;
             if (toast) {
               toast.classList.remove('hidden');
               setTimeout(() => toast.classList.add('hidden'), 3500);
             }
           }
-        } else if (data.type === 'color') {
-          if (role === 2) {
-            const maxColor = COLOR_PALETTE.length - 1;
-            if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
-              state.p1ColorIdx = data.p1ColorIdx;
-            }
-            if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
-              state.p2ColorIdx = data.p2ColorIdx;
-            }
-            applyPlayerColors(false);
-          }
-        }
-
-        // 11. Player Name Change Broadcast
-        else if (data.type === 'player-name') {
-          if (data.role === 1 && data.name) {
-            state.p1CustomName = data.name;
-          } else if (data.role === 2 && data.name) {
-            state.p2CustomName = data.name;
-          }
-          updateHUD();
-          const toast = document.getElementById('selection-toast');
-          const msgEl = document.getElementById('selection-msg');
-          if (msgEl) msgEl.textContent = `✏️ ${data.name} updated their player name!`;
-          if (toast) {
-            toast.classList.remove('hidden');
-            setTimeout(() => toast.classList.add('hidden'), 3500);
-          }
+        } catch (err) {
+          console.warn('Unhandled exception in online message dispatch:', err);
         }
       });
 
       conn.on('close', () => {
+        if (state.online.connId !== connId) return;
         const remoteRole = role === 1 ? 2 : 1;
         handleTemporaryDisconnect(remoteRole);
       });
 
       conn.on('error', err => {
+        if (state.online.connId !== connId) return;
         console.warn('WebRTC data connection warning:', err);
         if (!conn.open) {
           const remoteRole = role === 1 ? 2 : 1;
@@ -5192,20 +5476,29 @@
       }
       disconnectOnline(false);
 
-      const code = generate8CharRoomCode();
+      let code, sessionToken;
+      try {
+        code = generate8CharRoomCode();
+        sessionToken = generateCryptographicToken(16);
+      } catch (err) {
+        console.error('Failed to generate cryptographic randomness:', err);
+        onlineStatusText.textContent = 'Cryptographic random generator is unavailable on this device. Room creation aborted.';
+        return;
+      }
+
       const peerId = `dotsboxes3d-xo-${code.toLowerCase()}`;
       onlineStatusText.textContent = retryCount > 0 ? `Resolving collision... Creating Room ${code}...` : `Creating Room ${code}...`;
-
-      const sessionToken = generateCryptographicToken(16);
 
       const peer = new Peer(peerId);
       state.online.peer = peer;
       state.online.roomCode = code;
       state.online.sessionToken = sessionToken;
-      state.online.matchId = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      state.online.matchId = 'm_' + Date.now() + '_' + generateCryptographicToken(4);
       state.online.moveNumber = 0;
       state.online.handshakeComplete = false;
       state.online.isReconnecting = false;
+      state.online.guestSlotReserved = false;
+      state.online.guestPeerId = null;
 
       peer.on('open', () => {
         const box = document.getElementById('host-code-display');
@@ -5215,6 +5508,15 @@
         setOnlineBadgeState('waiting', `Waiting (${code})`);
         onlineStatusText.textContent = `Room ${code} is open! Share this 8-character code with your friend and wait for them to join.`;
         SoundFX.dotSelect();
+
+        // 15-minute room idle expiration timer for abandoned rooms
+        if (state.online.roomIdleTimer) clearTimeout(state.online.roomIdleTimer);
+        state.online.roomIdleTimer = setTimeout(() => {
+          if (!state.online.active && !state.online.handshakeComplete) {
+            onlineStatusText.textContent = 'Room expired due to inactivity (15m). Tap Create Room to generate a fresh room.';
+            disconnectOnline(false);
+          }
+        }, 15 * 60 * 1000);
       });
 
       peer.on('connection', incomingConn => {
@@ -5228,7 +5530,7 @@
           }, 3500);
 
           incomingConn.on('data', data => {
-            if (data && data.type === 'reconnect-request' && data.sessionToken === state.online.sessionToken) {
+            if (data && data.type === 'reconnect-request' && data.sessionToken === state.online.sessionToken && data.role === 2) {
               clearTimeout(authTimer);
               try { state.online.conn.close(); } catch (e) {}
               setupDataConnection(incomingConn, 1, code, true);
@@ -5242,6 +5544,32 @@
           });
           return;
         }
+
+        // If guest slot is reserved during in-flight handshake
+        if (state.online.guestSlotReserved && !state.online.handshakeComplete) {
+          try {
+            incomingConn.send({ type: 'room-full', error: 'Room is full (2/2 players already connected).' });
+            incomingConn.close();
+          } catch (e) {}
+          return;
+        }
+
+        // Reserve guest slot immediately
+        state.online.guestSlotReserved = true;
+        state.online.guestPeerId = incomingConn.peer;
+
+        if (state.online.handshakeTimer) clearTimeout(state.online.handshakeTimer);
+        state.online.handshakeTimer = setTimeout(() => {
+          if (!state.online.handshakeComplete) {
+            console.warn('Incomplete guest handshake timed out; releasing guest slot.');
+            try { incomingConn.close(); } catch (e) {}
+            state.online.guestSlotReserved = false;
+            state.online.guestPeerId = null;
+            state.online.conn = null;
+            setOnlineBadgeState('waiting', `Waiting (${code})`);
+            onlineStatusText.textContent = `Room ${code} is open! Waiting for guest to join...`;
+          }
+        }, 12000);
 
         // Accept incoming guest connection directly
         const isReconnect = state.online.isReconnecting;
@@ -5304,6 +5632,15 @@
       disconnectOnline(false);
       onlineStatusText.textContent = `Connecting to Room ${raw}...`;
 
+      // 15-second connect timeout for guest
+      if (state.online.guestConnectTimeout) clearTimeout(state.online.guestConnectTimeout);
+      state.online.guestConnectTimeout = setTimeout(() => {
+        if (!state.online.handshakeComplete) {
+          onlineStatusText.textContent = `Connection timed out. Host room ${raw} did not respond or code is incorrect.`;
+          disconnectOnline(false);
+        }
+      }, 15000);
+
       const peer = new Peer();
       state.online.peer = peer;
 
@@ -5324,6 +5661,10 @@
       });
 
       peer.on('error', err => {
+        if (state.online.guestConnectTimeout) {
+          clearTimeout(state.online.guestConnectTimeout);
+          state.online.guestConnectTimeout = null;
+        }
         onlineStatusText.textContent = `Could not find Room ${raw}. Check the 8-character code with your friend!`;
       });
     });
@@ -5353,8 +5694,6 @@
     document.getElementById('btn-online').addEventListener('click', openOnlineModal);
     document.getElementById('online-close-top').addEventListener('click', closeOnlineModal);
     document.getElementById('online-done-btn').addEventListener('click', closeOnlineModal);
-
-
     // =========================================================================
     // 30 MOST COMMON WORLD LANGUAGES (TRANSLATION ENGINE)
     // =========================================================================
@@ -7685,8 +8024,16 @@ ${body}`;
         if (state.online.active && state.online.conn && state.online.conn.open) {
           lastRemoteHeartbeatTime = Date.now();
           try {
-            state.online.conn.send({ type: 'heartbeat-ping', time: Date.now() });
-            state.online.conn.send({ type: 'peer-resume', role: state.online.role });
+            state.online.conn.send({
+              type: 'heartbeat-ping',
+              sessionToken: state.online.sessionToken,
+              time: Date.now()
+            });
+            state.online.conn.send({
+              type: 'peer-resume',
+              sessionToken: state.online.sessionToken,
+              role: state.online.role
+            });
           } catch (e) {}
           updatePlayerOnlineBadges(true, true);
         }
