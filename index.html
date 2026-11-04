@@ -1468,7 +1468,17 @@
         role: null, // 1 (Host) or 2 (Guest)
         roomCode: null,
         peer: null,
-        conn: null
+        conn: null,
+        sessionToken: null,
+        matchId: null,
+        moveNumber: 0,
+        isReconnecting: false,
+        reconnectGraceTimer: null,
+        reconnectAttempts: 0,
+        handshakeComplete: false,
+        rematchRequestedBy: null, // 1 or 2
+        pendingRestartConfirmation: false,
+        pendingRestartTimer: null
       }
     };
 
@@ -1910,6 +1920,149 @@
     }
 
     // =========================================================================
+    // MULTIPLAYER STATE INTEGRITY & CHECKSUM HELPERS
+    // =========================================================================
+    function getBoardStateChecksum() {
+      const N = state.gridSize;
+      let str = `${state.online.matchId || ''}:${state.online.moveNumber}:${state.currentPlayer}:${state.scores[1]}:${state.scores[2]}`;
+      for (let r = 0; r < N; r++) {
+        str += '|h' + (state.hLines[r] ? state.hLines[r].join('') : '');
+      }
+      for (let r = 0; r < N - 1; r++) {
+        str += '|v' + (state.vLines[r] ? state.vLines[r].join('') : '');
+      }
+      for (let r = 0; r < N - 1; r++) {
+        str += '|b' + (state.boxes[r] ? state.boxes[r].join('') : '');
+      }
+      let hash = 5381;
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash;
+      }
+      return (hash >>> 0).toString(16);
+    }
+
+    function getSerializableGameState() {
+      return {
+        matchId: state.online.matchId,
+        sessionToken: state.online.sessionToken,
+        gridSize: state.gridSize,
+        boardScale: Math.round((state.boardScale || 1.1) * 100),
+        p1ColorIdx: state.p1ColorIdx,
+        p2ColorIdx: state.p2ColorIdx,
+        p1Name: (state.p1CustomName || '').trim() || 'Player 1',
+        p2Name: (state.p2CustomName || '').trim() || 'Player 2',
+        currentPlayer: state.currentPlayer,
+        scores: { ...state.scores },
+        hLines: state.hLines.map(r => [...r]),
+        vLines: state.vLines.map(r => [...r]),
+        boxes: state.boxes.map(r => [...r]),
+        lastEdge: state.lastEdge ? { ...state.lastEdge } : null,
+        moveNumber: state.online.moveNumber,
+        onlineUndoUsedThisTurn: Boolean(state.onlineUndoUsedThisTurn),
+        gameOver: Boolean(state.gameOver)
+      };
+    }
+
+    function applyFullGameState(fullState) {
+      if (!fullState || typeof fullState !== 'object') return;
+      if (fullState.matchId) state.online.matchId = fullState.matchId;
+      if (fullState.sessionToken) state.online.sessionToken = fullState.sessionToken;
+
+      const N = [4, 5, 6].includes(fullState.gridSize) ? fullState.gridSize : state.gridSize;
+      state.gridSize = N;
+      setGridButtonActive(N);
+
+      const maxColor = COLOR_PALETTE.length - 1;
+      if (typeof fullState.p1ColorIdx === 'number' && fullState.p1ColorIdx >= 0 && fullState.p1ColorIdx <= maxColor) {
+        state.p1ColorIdx = fullState.p1ColorIdx;
+      }
+      if (typeof fullState.p2ColorIdx === 'number' && fullState.p2ColorIdx >= 0 && fullState.p2ColorIdx <= maxColor) {
+        state.p2ColorIdx = fullState.p2ColorIdx;
+      }
+      if (fullState.p1Name) state.p1CustomName = fullState.p1Name;
+      if (fullState.p2Name) state.p2CustomName = fullState.p2Name;
+      applyPlayerColors(false);
+
+      if (Array.isArray(fullState.hLines)) {
+        state.hLines = fullState.hLines.map(r => [...r]);
+      }
+      if (Array.isArray(fullState.vLines)) {
+        state.vLines = fullState.vLines.map(r => [...r]);
+      }
+      if (Array.isArray(fullState.boxes)) {
+        state.boxes = fullState.boxes.map(r => [...r]);
+      }
+      if (fullState.scores) {
+        state.scores = { 1: fullState.scores[1] || 0, 2: fullState.scores[2] || 0 };
+      }
+      if (fullState.currentPlayer === 1 || fullState.currentPlayer === 2) {
+        state.currentPlayer = fullState.currentPlayer;
+      }
+      state.lastEdge = fullState.lastEdge ? { ...fullState.lastEdge } : null;
+      state.gameOver = Boolean(fullState.gameOver);
+      state.online.moveNumber = typeof fullState.moveNumber === 'number' ? fullState.moveNumber : 0;
+      state.onlineUndoUsedThisTurn = Boolean(fullState.onlineUndoUsedThisTurn);
+
+      build3DBoard();
+
+      // Re-spawn captured 3D XO monuments
+      for (let r = 0; r < N - 1; r++) {
+        for (let c = 0; c < N - 1; c++) {
+          const owner = state.boxes[r]?.[c];
+          if (owner === 1 || owner === 2) {
+            create3DBoxToken(r, c, owner);
+          }
+        }
+      }
+
+      updateVisuals();
+      updateHUD();
+      if (state.gameOver) {
+        showVictoryModal();
+      } else {
+        hideVictoryModal();
+      }
+    }
+
+    function startOnlineRematch() {
+      if (state.online.role !== 1) return;
+      state.online.matchId = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      state.online.moveNumber = 0;
+      state.online.rematchRequestedBy = null;
+
+      const playAgainBtn = document.getElementById('modal-play-again');
+      if (playAgainBtn) {
+        playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+        playAgainBtn.disabled = false;
+        playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+      }
+
+      initGame(state.gridSize);
+
+      if (state.online.conn && state.online.conn.open) {
+        state.online.conn.send({
+          type: 'rematch-start',
+          sessionToken: state.online.sessionToken,
+          matchId: state.online.matchId,
+          gridSize: state.gridSize,
+          p1ColorIdx: state.p1ColorIdx,
+          p2ColorIdx: state.p2ColorIdx,
+          p1Name: (state.p1CustomName || '').trim() || 'Player 1',
+          p2Name: (state.p2CustomName || '').trim() || 'Player 2'
+        });
+      }
+
+      const toast = document.getElementById('selection-toast');
+      const msgEl = document.getElementById('selection-msg');
+      if (msgEl) msgEl.textContent = '🎮 Rematch started! Both players ready.';
+      if (toast) {
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 3500);
+      }
+    }
+
+    // =========================================================================
     // GAME LOGIC & STATE MANAGEMENT
     // =========================================================================
     function initGame(newGridSize = state.gridSize) {
@@ -1983,8 +2136,14 @@
 
     function placeEdge(type, r, c, fromRemote = false) {
       if (state.gameOver || isEdgeClaimed(type, r, c)) return false;
-      if (state.online.active && !fromRemote && state.currentPlayer !== state.online.role) {
-        return false;
+      if (state.online.active && !fromRemote) {
+        if (state.currentPlayer !== state.online.role) {
+          return false;
+        }
+        if (state.online.isReconnecting) {
+          showHostControlNotice('Connection interrupted. Please wait for reconnection...');
+          return false;
+        }
       }
 
       const player = state.currentPlayer;
@@ -1998,7 +2157,8 @@
         hLines: state.hLines.map(row => [...row]),
         vLines: state.vLines.map(row => [...row]),
         boxes: state.boxes.map(row => [...row]),
-        lastEdge: state.lastEdge ? { ...state.lastEdge } : null
+        lastEdge: state.lastEdge ? { ...state.lastEdge } : null,
+        moveNumber: state.online.moveNumber
       });
 
       if (type === 'h') state.hLines[r][c] = player;
@@ -2032,14 +2192,26 @@
         state.scores[player] += captured.length;
         captured.forEach(b => create3DBoxToken(b.r, b.c, player));
         SoundFX.boxCapture(player, captured.length);
-        // Box claimed popup removed per request - no banner shown on top of the big box
       } else {
         SoundFX.linePlace(player);
         state.currentPlayer = player === 1 ? 2 : 1;
       }
 
-      if (state.online.active && !fromRemote && state.online.conn && state.online.conn.open) {
-        state.online.conn.send({ type: 'move', edgeType: type, r, c });
+      if (state.online.active && !fromRemote) {
+        state.online.moveNumber++;
+        if (state.online.conn && state.online.conn.open) {
+          state.online.conn.send({
+            type: 'move',
+            sessionToken: state.online.sessionToken,
+            matchId: state.online.matchId,
+            moveNumber: state.online.moveNumber,
+            edgeType: type,
+            r,
+            c,
+            senderRole: state.online.role,
+            stateChecksum: getBoardStateChecksum()
+          });
+        }
       }
 
       updateVisuals();
@@ -2064,21 +2236,48 @@
       return true;
     }
 
-    function executeOnlineUndo(role, fromRemote = false) {
-      if (state.history.length === 0) return;
+    function executeOnlineUndo(role, fromRemote = false, remoteMoveNumber = null, remoteChecksum = null) {
+      if (state.history.length === 0 || state.gameOver) return;
+      if (state.online.isReconnecting) return;
+
+      const expectedRole = fromRemote ? (state.online.role === 1 ? 2 : 1) : state.online.role;
+      if (role !== expectedRole) {
+        console.warn('Rejected online undo: role mismatch', role, expectedRole);
+        return;
+      }
+
+      const lastSnap = state.history[state.history.length - 1];
+      if (!lastSnap || lastSnap.movePlayer !== role) {
+        console.warn('Rejected online undo: last move does not belong to requesting player', lastSnap?.movePlayer, role);
+        return;
+      }
+
+      if (state.onlineUndoUsedThisTurn) {
+        console.warn('Rejected online undo: undo already used this turn');
+        return;
+      }
+
+      if (fromRemote && typeof remoteMoveNumber === 'number') {
+        if (remoteMoveNumber !== state.online.moveNumber) {
+          console.warn('Rejected online undo: move number mismatch', remoteMoveNumber, state.online.moveNumber);
+          return;
+        }
+      }
+
       const snap = state.history.pop();
       if (!snap) return;
 
       state.currentPlayer = role; // Restore turn back to the player who made the accidental move
       state.scores = { ...snap.scores };
-      state.hLines = snap.hLines;
-      state.vLines = snap.vLines;
-      state.boxes = snap.boxes;
-      state.lastEdge = snap.lastEdge;
+      state.hLines = snap.hLines.map(r => [...r]);
+      state.vLines = snap.vLines.map(r => [...r]);
+      state.boxes = snap.boxes.map(r => [...r]);
+      state.lastEdge = snap.lastEdge ? { ...snap.lastEdge } : null;
       state.selectedDot = null;
       state.hintEdge = null;
       state.gameOver = false;
       state.onlineUndoUsedThisTurn = true; // Used once in this turn
+      state.online.moveNumber = Math.max(0, state.online.moveNumber - 1);
 
       // Sync 3D Box tokens
       const N = state.gridSize;
@@ -2113,7 +2312,14 @@
       }
 
       if (!fromRemote && state.online.active && state.online.conn && state.online.conn.open) {
-        state.online.conn.send({ type: 'online-undo', role });
+        state.online.conn.send({
+          type: 'online-undo',
+          sessionToken: state.online.sessionToken,
+          role: role,
+          moveNumber: state.online.moveNumber + 1,
+          stateChecksum: getBoardStateChecksum(),
+          fullState: getSerializableGameState()
+        });
       }
     }
 
@@ -3738,7 +3944,11 @@
       if (state.online.active) {
         const myRole = state.online.role;
         if (state.onlineUndoUsedThisTurn) return;
-        const lastMove = state.history[state.history.length - 1];
+        if (state.online.isReconnecting) {
+          showHostControlNotice('Connection interrupted. Please wait for reconnection...');
+          return;
+        }
+        const lastMove = state.history.length > 0 ? state.history[state.history.length - 1] : null;
         if (!lastMove || lastMove.movePlayer !== myRole) return;
         executeOnlineUndo(myRole, false);
         return;
@@ -3765,26 +3975,64 @@
       }
     });
     document.getElementById('btn-restart').addEventListener('click', () => {
-      // When online, only Room Host (Player 1) can restart the match
-      if (state.online.active && state.online.role === 2) {
-        showHostControlNotice('Only Room Host (Player 1) can restart the board.');
+      // Online multiplayer restart
+      if (state.online.active) {
+        if (state.online.role === 2) {
+          showHostControlNotice('Only Room Host (Player 1) can restart the board.');
+          return;
+        }
+
+        if (state.online.isReconnecting) {
+          showHostControlNotice('Connection interrupted. Please wait for reconnection...');
+          return;
+        }
+
+        // Active game in progress: prevent accidental single click
+        if (!state.gameOver) {
+          if (!state.online.pendingRestartConfirmation) {
+            state.online.pendingRestartConfirmation = true;
+            if (state.online.pendingRestartTimer) clearTimeout(state.online.pendingRestartTimer);
+            state.online.pendingRestartTimer = setTimeout(() => {
+              state.online.pendingRestartConfirmation = false;
+            }, 4000);
+            showHostControlNotice('Restart match? Tap New Game again within 4s to confirm.');
+            return;
+          }
+          state.online.pendingRestartConfirmation = false;
+          if (state.online.pendingRestartTimer) clearTimeout(state.online.pendingRestartTimer);
+        }
+
+        // Host restarts match cleanly
+        SoundFX.dotSelect();
+        state.online.matchId = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        state.online.moveNumber = 0;
+        state.online.rematchRequestedBy = null;
+        initGame(state.gridSize);
+
+        if (state.online.conn && state.online.conn.open) {
+          state.online.conn.send({
+            type: 'restart-match',
+            sessionToken: state.online.sessionToken,
+            matchId: state.online.matchId,
+            gridSize: state.gridSize,
+            p1ColorIdx: state.p1ColorIdx,
+            p2ColorIdx: state.p2ColorIdx,
+            p1Name: (state.p1CustomName || '').trim() || 'Player 1',
+            p2Name: (state.p2CustomName || '').trim() || 'Player 2'
+          });
+        }
         return;
       }
 
+      // Offline modes (PvP and vs AI)
       if (state.gameOver) {
         AdMobManager.handlePostMatchProceed(() => {
           SoundFX.dotSelect();
           initGame(state.gridSize);
-          if (state.online.active && state.online.conn && state.online.conn.open) {
-            state.online.conn.send({ type: 'restart', gridSize: state.gridSize });
-          }
         });
       } else {
         SoundFX.dotSelect();
         initGame(state.gridSize);
-        if (state.online.active && state.online.conn && state.online.conn.open) {
-          state.online.conn.send({ type: 'restart', gridSize: state.gridSize });
-        }
       }
     });
 
@@ -3942,6 +4190,58 @@
       });
     });
     document.getElementById('modal-play-again').addEventListener('click', () => {
+      // In online multiplayer: Rematch confirmation system
+      if (state.online.active) {
+        if (state.online.isReconnecting) {
+          showHostControlNotice('Connection interrupted. Please wait for reconnection...');
+          return;
+        }
+
+        const myRole = state.online.role;
+        const playAgainBtn = document.getElementById('modal-play-again');
+
+        // If opponent already requested rematch, this click accepts it!
+        if (state.online.rematchRequestedBy && state.online.rematchRequestedBy !== myRole) {
+          SoundFX.dotSelect();
+          if (state.online.role === 1) {
+            startOnlineRematch();
+          } else {
+            playAgainBtn.textContent = 'Starting Rematch...';
+            playAgainBtn.disabled = true;
+            if (state.online.conn && state.online.conn.open) {
+              state.online.conn.send({
+                type: 'rematch-accepted',
+                sessionToken: state.online.sessionToken
+              });
+            }
+          }
+          return;
+        }
+
+        // Send rematch request
+        state.online.rematchRequestedBy = myRole;
+        playAgainBtn.textContent = '⏳ Rematch Requested...';
+        playAgainBtn.disabled = true;
+        SoundFX.dotSelect();
+
+        const toast = document.getElementById('selection-toast');
+        const msgEl = document.getElementById('selection-msg');
+        if (msgEl) msgEl.textContent = '🎮 Rematch requested! Waiting for opponent to accept...';
+        if (toast) {
+          toast.classList.remove('hidden');
+        }
+
+        if (state.online.conn && state.online.conn.open) {
+          state.online.conn.send({
+            type: 'rematch-request',
+            sessionToken: state.online.sessionToken,
+            requesterRole: myRole
+          });
+        }
+        return;
+      }
+
+      // Offline modes:
       AdMobManager.handlePostMatchProceed(() => {
         hideVictoryModal();
         SoundFX.dotSelect();
@@ -4246,12 +4546,31 @@
       }, 3000);
     }
 
-    function disconnectOnline(peerDisconnected = false, remoteRoleNumber = null) {
+    function clearReconnectTimer() {
+      if (state.online.reconnectGraceTimer) {
+        clearTimeout(state.online.reconnectGraceTimer);
+        state.online.reconnectGraceTimer = null;
+      }
+    }
+
+    function disconnectOnline(peerDisconnected = false, remoteRoleNumber = null, permanent = false) {
       stopOnlineHeartbeat();
+      clearReconnectTimer();
+
+      if (state.online.pendingRestartTimer) {
+        clearTimeout(state.online.pendingRestartTimer);
+        state.online.pendingRestartTimer = null;
+      }
+
       if (state.online.conn) {
         try {
-          if (!peerDisconnected) {
-            state.online.conn.send({ type: 'peer-leave', role: state.online.role });
+          if (!peerDisconnected || permanent) {
+            state.online.conn.send({
+              type: 'peer-leave',
+              permanent: true,
+              sessionToken: state.online.sessionToken,
+              role: state.online.role
+            });
           }
           state.online.conn.close();
         } catch (e) {}
@@ -4268,6 +4587,22 @@
       state.online.roomCode = null;
       state.online.conn = null;
       state.online.peer = null;
+      state.online.sessionToken = null;
+      state.online.matchId = null;
+      state.online.moveNumber = 0;
+      state.online.isReconnecting = false;
+      state.online.reconnectAttempts = 0;
+      state.online.handshakeComplete = false;
+      state.online.rematchRequestedBy = null;
+      state.online.pendingRestartConfirmation = false;
+
+      const playAgainBtn = document.getElementById('modal-play-again');
+      if (playAgainBtn) {
+        playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+        playAgainBtn.disabled = false;
+        playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+      }
+
       document.getElementById('host-code-display').classList.add('hidden');
       document.getElementById('host-code-display').classList.remove('flex');
 
@@ -4289,65 +4624,449 @@
       updateHUD();
     }
 
-    function setupDataConnection(conn, role, roomCode) {
+    function handleTemporaryDisconnect(remoteRole) {
+      if (!state.online.active || state.online.isReconnecting) return;
+      state.online.isReconnecting = true;
+      stopOnlineHeartbeat();
+
+      const reconnectMsg = '⚡ Network interrupted. Reconnecting to match (25s)...';
+
+      if (state.online.role === 1) {
+        updatePlayerOnlineBadges(true, 'reconnecting', reconnectMsg);
+      } else {
+        updatePlayerOnlineBadges('reconnecting', true, reconnectMsg);
+      }
+
+      clearReconnectTimer();
+      state.online.reconnectGraceTimer = setTimeout(() => {
+        if (state.online.isReconnecting) {
+          disconnectOnline(true, remoteRole, true);
+        }
+      }, 25000);
+
+      // If Guest: initiate automatic WebRTC re-dial to Host room
+      if (state.online.role === 2 && state.online.roomCode) {
+        triggerGuestAutoReconnect();
+      }
+    }
+
+    function triggerGuestAutoReconnect() {
+      if (state.online.role !== 2 || !state.online.roomCode || !state.online.isReconnecting) return;
+      state.online.reconnectAttempts = (state.online.reconnectAttempts || 0) + 1;
+      if (state.online.reconnectAttempts > 8) return;
+
+      setTimeout(() => {
+        if (!state.online.isReconnecting || !state.online.roomCode) return;
+        try {
+          if (!state.online.peer || state.online.peer.destroyed) {
+            state.online.peer = new Peer();
+            state.online.peer.on('open', () => {
+              const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode}`, { reliable: true });
+              setupDataConnection(newConn, 2, state.online.roomCode, true);
+            });
+          } else {
+            const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode}`, { reliable: true });
+            setupDataConnection(newConn, 2, state.online.roomCode, true);
+          }
+        } catch (e) {
+          triggerGuestAutoReconnect();
+        }
+      }, 1800);
+    }
+
+    function setupDataConnection(conn, role, roomCode, isReconnect = false) {
       state.online.conn = conn;
       state.online.role = role;
       state.online.roomCode = roomCode;
 
       conn.on('open', () => {
-        state.online.active = true;
-        state.vsAI = false;
-        syncModeAndAIDiffUI();
-        setOnlineBadgeState('connected', role === 1 ? 'Connected (Host · P1)' : 'Connected (Guest · P2)');
-        onlineStatusText.textContent = `Connected live in Room ${roomCode}! You are Player ${role} (${role === 1 ? 'X' : 'O'}). Both players online!`;
-        SoundFX.hint();
-
-        // Both players are now active and playing online: show (Online) under both names
-        updatePlayerOnlineBadges(true, true);
-        startOnlineHeartbeat();
+        const remoteRole = role === 1 ? 2 : 1;
 
         if (role === 1) {
-          initGame(state.gridSize);
+          // HOST: If guest is reconnecting
+          if (isReconnect || state.online.isReconnecting) {
+            state.online.active = true;
+            state.online.isReconnecting = false;
+            clearReconnectTimer();
+            startOnlineHeartbeat();
+            updatePlayerOnlineBadges(true, true);
+            setOnlineBadgeState('connected', 'Connected (Host · P1)');
+            conn.send({
+              type: 'reconnect-ack',
+              sessionToken: state.online.sessionToken,
+              fullState: getSerializableGameState()
+            });
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = '⚡ Guest reconnected! Match resumed.';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 3500);
+            }
+            return;
+          }
+
+          // Initial connection: Send secure handshake challenge to guest
           conn.send({
-            type: 'sync-init',
+            type: 'handshake-challenge',
+            sessionToken: state.online.sessionToken,
+            matchId: state.online.matchId,
             gridSize: state.gridSize,
             p1ColorIdx: state.p1ColorIdx,
             p2ColorIdx: state.p2ColorIdx,
             p1Name: (state.p1CustomName || '').trim() || 'Player 1'
           });
+        } else {
+          // GUEST: If reconnecting to existing session
+          if (isReconnect && state.online.sessionToken) {
+            conn.send({
+              type: 'reconnect-request',
+              sessionToken: state.online.sessionToken,
+              role: 2,
+              lastMoveNumber: state.online.moveNumber
+            });
+          }
         }
-        updateHUD();
-
-        // Once connected for both players, automatically take them to the main page to start playing
-        setTimeout(() => {
-          closeOnlineModal();
-          const selToast = document.getElementById('selection-toast');
-          if (selToast) selToast.classList.remove('hidden');
-          const msgEl = document.getElementById('selection-msg');
-          if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
-          const tipRow = document.getElementById('top-board-tip-row');
-          if (tipRow) tipRow.classList.remove('hidden');
-        }, 1100);
       });
 
       conn.on('data', data => {
         if (!data || typeof data !== 'object') return;
         lastRemoteHeartbeatTime = Date.now();
 
-        // Ensure both badges reflect (Online) upon receiving valid peer traffic
+        // If connection was in reconnecting state, mark restored
+        if (state.online.isReconnecting) {
+          state.online.isReconnecting = false;
+          clearReconnectTimer();
+          startOnlineHeartbeat();
+        }
         updatePlayerOnlineBadges(true, true);
 
         const remoteRole = role === 1 ? 2 : 1;
 
+        // 1. Room Full check
+        if (data.type === 'room-full') {
+          onlineStatusText.textContent = 'This room is already full (2/2 players).';
+          disconnectOnline(false);
+          return;
+        }
+
+        // 2. Handshake Challenge (Guest receives from Host)
+        if (data.type === 'handshake-challenge' && role === 2) {
+          state.online.sessionToken = data.sessionToken;
+          state.online.matchId = data.matchId;
+          state.online.handshakeComplete = true;
+          state.online.active = true;
+          state.online.isReconnecting = false;
+          state.online.moveNumber = 0;
+          state.vsAI = false;
+          syncModeAndAIDiffUI();
+
+          const validSizes = [4, 5, 6];
+          const gSize = validSizes.includes(data.gridSize) ? data.gridSize : 5;
+          const maxColor = COLOR_PALETTE.length - 1;
+          if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
+            state.p1ColorIdx = data.p1ColorIdx;
+          }
+          if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
+            state.p2ColorIdx = data.p2ColorIdx;
+          }
+          if (data.p1Name) {
+            state.p1CustomName = data.p1Name;
+          }
+
+          // Guest sets own name independently
+          const myGuestName = (localStorage.getItem('dots3d_player_name') || state.p2CustomName || '').trim() || 'Player 2';
+          state.p2CustomName = myGuestName;
+
+          applyPlayerColors(false);
+          setGridButtonActive(gSize);
+          initGame(gSize);
+
+          // Respond to handshake
+          conn.send({
+            type: 'handshake-response',
+            sessionToken: state.online.sessionToken,
+            matchId: state.online.matchId,
+            p2Name: myGuestName
+          });
+
+          setOnlineBadgeState('connected', 'Connected (Guest · P2)');
+          onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
+          SoundFX.hint();
+          startOnlineHeartbeat();
+          updatePlayerOnlineBadges(true, true);
+
+          setTimeout(() => {
+            closeOnlineModal();
+            const selToast = document.getElementById('selection-toast');
+            if (selToast) selToast.classList.remove('hidden');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
+            const tipRow = document.getElementById('top-board-tip-row');
+            if (tipRow) tipRow.classList.remove('hidden');
+          }, 1000);
+          return;
+        }
+
+        // 3. Handshake Response (Host receives from Guest)
+        if (data.type === 'handshake-response' && role === 1) {
+          if (data.sessionToken !== state.online.sessionToken) {
+            console.warn('Rejected handshake response with invalid session token');
+            return;
+          }
+          state.online.handshakeComplete = true;
+          state.online.active = true;
+          state.online.isReconnecting = false;
+          state.vsAI = false;
+          syncModeAndAIDiffUI();
+
+          if (data.p2Name) {
+            state.p2CustomName = data.p2Name;
+          }
+          updateHUD();
+
+          setOnlineBadgeState('connected', 'Connected (Host · P1)');
+          onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
+          SoundFX.hint();
+          startOnlineHeartbeat();
+          updatePlayerOnlineBadges(true, true);
+
+          setTimeout(() => {
+            closeOnlineModal();
+            const selToast = document.getElementById('selection-toast');
+            if (selToast) selToast.classList.remove('hidden');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = `🎮 Room ${roomCode} Connected! Both players online — start playing!`;
+            const tipRow = document.getElementById('top-board-tip-row');
+            if (tipRow) tipRow.classList.remove('hidden');
+          }, 1000);
+          return;
+        }
+
+        // 4. Reconnect Request & Ack
+        if (data.type === 'reconnect-request' && role === 1) {
+          if (data.sessionToken === state.online.sessionToken) {
+            state.online.active = true;
+            state.online.isReconnecting = false;
+            clearReconnectTimer();
+            startOnlineHeartbeat();
+            updatePlayerOnlineBadges(true, true);
+            conn.send({
+              type: 'reconnect-ack',
+              sessionToken: state.online.sessionToken,
+              fullState: getSerializableGameState()
+            });
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = '⚡ Guest reconnected! Match resumed.';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 3500);
+            }
+          }
+          return;
+        }
+
+        if (data.type === 'reconnect-ack' && role === 2) {
+          if (data.sessionToken === state.online.sessionToken) {
+            state.online.active = true;
+            state.online.isReconnecting = false;
+            clearReconnectTimer();
+            startOnlineHeartbeat();
+            applyFullGameState(data.fullState);
+            updatePlayerOnlineBadges(true, true);
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = '⚡ Reconnected to match! Game state synchronized.';
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 3500);
+            }
+          }
+          return;
+        }
+
+        // Validate session token for all in-game gameplay messages
+        if (state.online.sessionToken && data.sessionToken && data.sessionToken !== state.online.sessionToken) {
+          console.warn('Rejected message with mismatched sessionToken:', data.type);
+          return;
+        }
+
+        // 5. Heartbeat & Life-Cycle
         if (data.type === 'heartbeat-ping') {
           try { conn.send({ type: 'heartbeat-pong', time: Date.now() }); } catch (e) {}
         } else if (data.type === 'heartbeat-pong' || data.type === 'peer-resume') {
           lastRemoteHeartbeatTime = Date.now();
           updatePlayerOnlineBadges(true, true);
         } else if (data.type === 'peer-leave') {
-          disconnectOnline(true, remoteRole);
-        } else if (data.type === 'sync-init' || data.type === 'sync-board-config') {
-          // Guest receives full board configuration from Room Host (Player 1)
+          disconnectOnline(true, remoteRole, Boolean(data.permanent));
+        }
+
+        // 6. Move Synchronization & Sequential Validation
+        else if (data.type === 'move') {
+          // Reject moves from wrong match
+          if (data.matchId && state.online.matchId && data.matchId !== state.online.matchId) {
+            console.warn('Rejected move from different matchId:', data.matchId, state.online.matchId);
+            return;
+          }
+
+          // Duplicate or obsolete move
+          if (typeof data.moveNumber === 'number' && data.moveNumber <= state.online.moveNumber) {
+            return;
+          }
+
+          // Out of sequence move gap: request state sync
+          if (typeof data.moveNumber === 'number' && data.moveNumber > state.online.moveNumber + 1) {
+            console.warn('Move sequence gap detected! Local:', state.online.moveNumber, 'Incoming:', data.moveNumber);
+            if (conn && conn.open) {
+              conn.send({
+                type: 'request-state-sync',
+                sessionToken: state.online.sessionToken,
+                reason: 'move-gap'
+              });
+            }
+            return;
+          }
+
+          // Turn validation (simultaneous move defense)
+          if (state.currentPlayer !== remoteRole) {
+            console.warn('Simultaneous move conflict: incoming move when not remote turn');
+            if (role === 1) {
+              // Host is arbiter: reject guest move and broadcast authoritative state
+              if (conn && conn.open) {
+                conn.send({
+                  type: 'move-rejected',
+                  sessionToken: state.online.sessionToken,
+                  fullState: getSerializableGameState()
+                });
+              }
+            } else {
+              // Guest defers to Host: request sync
+              if (conn && conn.open) {
+                conn.send({
+                  type: 'request-state-sync',
+                  sessionToken: state.online.sessionToken,
+                  reason: 'simultaneous-move'
+                });
+              }
+            }
+            return;
+          }
+
+          const eType = data.edgeType;
+          const r = parseInt(data.r, 10);
+          const c = parseInt(data.c, 10);
+          const N = state.gridSize;
+
+          if (eType !== 'h' && eType !== 'v') return;
+          if (eType === 'h' && (isNaN(r) || isNaN(c) || r < 0 || r >= N || c < 0 || c >= N - 1)) return;
+          if (eType === 'v' && (isNaN(r) || isNaN(c) || r < 0 || r >= N - 1 || c < 0 || c >= N)) return;
+
+          if (isEdgeClaimed(eType, r, c)) {
+            console.warn('Edge already claimed. Requesting state sync.');
+            if (conn && conn.open) {
+              conn.send({
+                type: 'request-state-sync',
+                sessionToken: state.online.sessionToken,
+                reason: 'duplicate-edge'
+              });
+            }
+            return;
+          }
+
+          placeEdge(eType, r, c, true);
+          state.online.moveNumber = typeof data.moveNumber === 'number' ? data.moveNumber : state.online.moveNumber + 1;
+
+          // Checksum state verification
+          const localChecksum = getBoardStateChecksum();
+          if (data.stateChecksum && localChecksum !== data.stateChecksum) {
+            console.warn('Board state checksum mismatch after move! Requesting sync.');
+            if (conn && conn.open) {
+              conn.send({
+                type: 'request-state-sync',
+                sessionToken: state.online.sessionToken,
+                reason: 'checksum-mismatch'
+              });
+            }
+          }
+        }
+
+        // 7. Full State Synchronization Requests & Responses
+        else if (data.type === 'request-state-sync') {
+          if (role === 1 && conn && conn.open) {
+            conn.send({
+              type: 'sync-full-state',
+              sessionToken: state.online.sessionToken,
+              fullState: getSerializableGameState()
+            });
+          }
+        } else if (data.type === 'sync-full-state' || data.type === 'move-rejected') {
+          if (role === 2 && data.fullState) {
+            applyFullGameState(data.fullState);
+          }
+        }
+
+        // 8. Online Undo Validation & Synchronization
+        else if (data.type === 'online-undo') {
+          executeOnlineUndo(data.role, true, data.moveNumber, data.stateChecksum);
+        }
+
+        // 9. Rematch & Restart Protocols
+        else if (data.type === 'rematch-request') {
+          state.online.rematchRequestedBy = data.requesterRole;
+          const playAgainBtn = document.getElementById('modal-play-again');
+          if (playAgainBtn) {
+            playAgainBtn.textContent = 'Accept Rematch! 🎮';
+            playAgainBtn.disabled = false;
+            playAgainBtn.classList.add('ring-2', 'ring-emerald-400', 'animate-pulse');
+          }
+          const toast = document.getElementById('selection-toast');
+          const msgEl = document.getElementById('selection-msg');
+          if (msgEl) msgEl.textContent = '🎮 Opponent wants a rematch! Tap "Accept Rematch" to play!';
+          if (toast) {
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 4500);
+          }
+        } else if (data.type === 'rematch-accepted' && role === 1) {
+          startOnlineRematch();
+        } else if (data.type === 'rematch-start' || data.type === 'restart-match') {
+          state.online.matchId = data.matchId;
+          state.online.moveNumber = 0;
+          state.online.rematchRequestedBy = null;
+
+          const playAgainBtn = document.getElementById('modal-play-again');
+          if (playAgainBtn) {
+            playAgainBtn.textContent = (typeof t === 'function' ? t().playAgain : null) || 'Play Again';
+            playAgainBtn.disabled = false;
+            playAgainBtn.classList.remove('ring-2', 'ring-emerald-400', 'animate-pulse');
+          }
+
+          if (typeof data.p1ColorIdx === 'number') state.p1ColorIdx = data.p1ColorIdx;
+          if (typeof data.p2ColorIdx === 'number') state.p2ColorIdx = data.p2ColorIdx;
+          if (data.p1Name) state.p1CustomName = data.p1Name;
+          if (data.p2Name) state.p2CustomName = data.p2Name;
+          applyPlayerColors(false);
+
+          const validSizes = [4, 5, 6];
+          const gSize = validSizes.includes(data.gridSize) ? data.gridSize : state.gridSize;
+          setGridButtonActive(gSize);
+          initGame(gSize);
+
+          const toast = document.getElementById('selection-toast');
+          const msgEl = document.getElementById('selection-msg');
+          if (msgEl) {
+            msgEl.textContent = data.type === 'rematch-start'
+              ? '🎮 Rematch started! Both players ready.'
+              : '🔄 Room Host restarted the match.';
+          }
+          if (toast) {
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3500);
+          }
+        }
+
+        // 10. Board Configuration & Color Authority (Host-Only)
+        else if (data.type === 'sync-board-config') {
           if (role === 2) {
             const validSizes = [4, 5, 6];
             const gSize = validSizes.includes(data.gridSize) ? data.gridSize : 5;
@@ -4358,42 +5077,34 @@
             if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
               state.p2ColorIdx = data.p2ColorIdx;
             }
-            if (data.p1Name) {
-              state.p1CustomName = data.p1Name;
-            }
+            if (data.p1Name) state.p1CustomName = data.p1Name;
             applyPlayerColors(false);
             setGridButtonActive(gSize);
             initGame(gSize);
 
-            // Guest sends their custom name back to Host
-            if (data.type === 'sync-init') {
-              const myGuestName = (state.p2CustomName || state.p1CustomName || '').trim() || 'Player 2';
-              state.p2CustomName = myGuestName;
-              conn.send({
-                type: 'sync-guest-info',
-                p2Name: myGuestName
-              });
-            }
-
-            if (data.type === 'sync-board-config') {
-              const toast = document.getElementById('selection-toast');
-              const msgEl = document.getElementById('selection-msg');
-              if (msgEl) msgEl.textContent = `⚙️ Room Host updated board to ${gSize * gSize} Dots & synced page settings!`;
-              if (toast) {
-                toast.classList.remove('hidden');
-                setTimeout(() => toast.classList.add('hidden'), 3500);
-              }
+            const toast = document.getElementById('selection-toast');
+            const msgEl = document.getElementById('selection-msg');
+            if (msgEl) msgEl.textContent = `⚙️ Room Host updated board to ${gSize * gSize} Dots & synced page settings!`;
+            if (toast) {
+              toast.classList.remove('hidden');
+              setTimeout(() => toast.classList.add('hidden'), 3500);
             }
           }
-
-        } else if (data.type === 'sync-guest-info') {
-          // Host receives Guest's custom name
-          if (data.p2Name) {
-            state.p2CustomName = data.p2Name;
-            updateHUD();
+        } else if (data.type === 'color') {
+          if (role === 2) {
+            const maxColor = COLOR_PALETTE.length - 1;
+            if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
+              state.p1ColorIdx = data.p1ColorIdx;
+            }
+            if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
+              state.p2ColorIdx = data.p2ColorIdx;
+            }
+            applyPlayerColors(false);
           }
-        } else if (data.type === 'player-name') {
-          // Live name change broadcast
+        }
+
+        // 11. Player Name Change Broadcast
+        else if (data.type === 'player-name') {
           if (data.role === 1 && data.name) {
             state.p1CustomName = data.name;
           } else if (data.role === 2 && data.name) {
@@ -4407,97 +5118,42 @@
             toast.classList.remove('hidden');
             setTimeout(() => toast.classList.add('hidden'), 3500);
           }
-        } else if (data.type === 'online-undo') {
-          // Remote peer took back their accidental move (1-time undo)
-          executeOnlineUndo(data.role, true);
-        } else if (data.type === 'move') {
-          const N = state.gridSize;
-          const eType = data.edgeType;
-          const r = parseInt(data.r, 10);
-          const c = parseInt(data.c, 10);
-
-          // 1. Strict Turn Validation: Remote player can only place a line on their turn
-          if (state.currentPlayer !== remoteRole) {
-            console.warn('Rejected out-of-turn move from remote peer. Expected turn:', state.currentPlayer);
-            return;
-          }
-
-          // 2. Strict Edge Type & Coordinate Bounds Validation
-          if (eType !== 'h' && eType !== 'v') {
-            console.warn('Rejected invalid edge type:', eType);
-            return;
-          }
-
-          if (eType === 'h') {
-            if (isNaN(r) || isNaN(c) || r < 0 || r >= N || c < 0 || c >= N - 1) {
-              console.warn('Rejected out-of-bounds horizontal move:', r, c);
-              return;
-            }
-          } else {
-            if (isNaN(r) || isNaN(c) || r < 0 || r >= N - 1 || c < 0 || c >= N) {
-              console.warn('Rejected out-of-bounds vertical move:', r, c);
-              return;
-            }
-          }
-
-          // 3. Duplicate Move Validation: Edge must not be already claimed
-          if (isEdgeClaimed(eType, r, c)) {
-            console.warn('Rejected duplicate/already claimed move:', eType, r, c);
-            return;
-          }
-
-          placeEdge(eType, r, c, true);
-        } else if (data.type === 'color') {
-          const maxColor = COLOR_PALETTE.length - 1;
-          if (typeof data.p1ColorIdx === 'number' && data.p1ColorIdx >= 0 && data.p1ColorIdx <= maxColor) {
-            state.p1ColorIdx = data.p1ColorIdx;
-          }
-          if (typeof data.p2ColorIdx === 'number' && data.p2ColorIdx >= 0 && data.p2ColorIdx <= maxColor) {
-            state.p2ColorIdx = data.p2ColorIdx;
-          }
-          applyPlayerColors();
-        } else if (data.type === 'restart') {
-          initGame(state.gridSize);
         }
       });
 
       conn.on('close', () => {
-        // Allow brief 1.5s tolerance in case of WebRTC ICE renegotiation
-        setTimeout(() => {
-          if (state.online.active && (!state.online.conn || !state.online.conn.open)) {
-            const remoteRole = role === 1 ? 2 : 1;
-            disconnectOnline(true, remoteRole);
-          }
-        }, 1500);
+        const remoteRole = role === 1 ? 2 : 1;
+        handleTemporaryDisconnect(remoteRole);
       });
 
       conn.on('error', err => {
-        console.warn('WebRTC data connection notice:', err);
-        // Do not immediately terminate room on minor network warning if channel remains open
+        console.warn('WebRTC data connection warning:', err);
         if (!conn.open) {
-          setTimeout(() => {
-            if (state.online.active && (!state.online.conn || !state.online.conn.open)) {
-              const remoteRole = role === 1 ? 2 : 1;
-              disconnectOnline(true, remoteRole);
-            }
-          }, 2000);
+          const remoteRole = role === 1 ? 2 : 1;
+          handleTemporaryDisconnect(remoteRole);
         }
       });
     }
 
-    document.getElementById('btn-create-room').addEventListener('click', () => {
+    function createHostRoom(retryCount = 0) {
       if (typeof Peer === 'undefined') {
         onlineStatusText.textContent = 'Live connection network unavailable. Please check your internet connection.';
         return;
       }
-      disconnectOnline();
+      disconnectOnline(false);
+
       const code = String(Math.floor(100000 + Math.random() * 900000));
       const peerId = `dotsboxes3d-xo-${code}`;
-      onlineStatusText.textContent = `Creating Room ${code}...`;
+      onlineStatusText.textContent = retryCount > 0 ? `Resolving collision... Creating Room ${code}...` : `Creating Room ${code}...`;
 
       const peer = new Peer(peerId);
       state.online.peer = peer;
       state.online.roomCode = code;
+      state.online.sessionToken = 'st_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      state.online.matchId = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      state.online.moveNumber = 0;
+      state.online.handshakeComplete = false;
+      state.online.isReconnecting = false;
 
       peer.on('open', () => {
         const box = document.getElementById('host-code-display');
@@ -4509,13 +5165,57 @@
         SoundFX.dotSelect();
       });
 
-      peer.on('connection', conn => {
-        setupDataConnection(conn, 1, code);
+      peer.on('connection', incomingConn => {
+        // If room is already full with active connected guest
+        if (state.online.active && state.online.conn && state.online.conn.open && state.online.handshakeComplete) {
+          const authTimer = setTimeout(() => {
+            try {
+              incomingConn.send({ type: 'room-full', error: 'Room is full (2/2 players already connected).' });
+              incomingConn.close();
+            } catch (e) {}
+          }, 3500);
+
+          incomingConn.on('data', data => {
+            if (data && data.type === 'reconnect-request' && data.sessionToken === state.online.sessionToken) {
+              clearTimeout(authTimer);
+              try { state.online.conn.close(); } catch (e) {}
+              setupDataConnection(incomingConn, 1, code, true);
+            } else {
+              clearTimeout(authTimer);
+              try {
+                incomingConn.send({ type: 'room-full', error: 'Room is full (2/2 players already connected).' });
+                incomingConn.close();
+              } catch (e) {}
+            }
+          });
+          return;
+        }
+
+        // Handle reconnection or new guest
+        const isReconnect = state.online.isReconnecting;
+        setupDataConnection(incomingConn, 1, code, isReconnect);
       });
 
       peer.on('error', err => {
+        console.warn('Host Peer notice:', err.type, err);
+        // Room ID collision handling
+        if (err.type === 'unavailable-id') {
+          if (retryCount < 5) {
+            onlineStatusText.textContent = 'Room code collision, generating new code...';
+            try { peer.destroy(); } catch (e) {}
+            setTimeout(() => createHostRoom(retryCount + 1), 400);
+            return;
+          } else {
+            onlineStatusText.textContent = 'Room collision on server. Please tap Create Room Code again.';
+            return;
+          }
+        }
         onlineStatusText.textContent = `Network notice: ${err.type || 'Could not reach relay'}. Please check your connection and try again.`;
       });
+    }
+
+    document.getElementById('btn-create-room').addEventListener('click', () => {
+      createHostRoom(0);
     });
 
     document.getElementById('btn-join-room').addEventListener('click', () => {
@@ -4528,17 +5228,18 @@
         onlineStatusText.textContent = 'Live connection network unavailable. Please check your internet connection.';
         return;
       }
-      disconnectOnline();
+      disconnectOnline(false);
       onlineStatusText.textContent = `Connecting to Room ${raw}...`;
+
       const peer = new Peer();
       state.online.peer = peer;
 
       peer.on('open', () => {
         const conn = peer.connect(`dotsboxes3d-xo-${raw}`, { reliable: true });
-        setupDataConnection(conn, 2, raw);
+        setupDataConnection(conn, 2, raw, false);
       });
 
-      peer.on('error', () => {
+      peer.on('error', err => {
         onlineStatusText.textContent = `Could not find Room ${raw}. Check the 6-digit code with your friend!`;
       });
     });
@@ -4548,7 +5249,9 @@
       copyTextSafe(state.online.roomCode, e.currentTarget, 'Copied!');
     });
 
-    document.getElementById('btn-online-disconnect').addEventListener('click', disconnectOnline);
+    document.getElementById('btn-online-disconnect').addEventListener('click', () => {
+      disconnectOnline(false, null, true);
+    });
 
     const openOnlineModal = () => {
       openViewWithHistory('online-modal', null);
@@ -5099,7 +5802,6 @@
       const savedName = localStorage.getItem('dots3d_player_name') || localStorage.getItem('dots3d_p1_name');
       if (savedName) {
         state.p1CustomName = savedName;
-        state.p2CustomName = savedName;
       }
     } catch (e) {}
 
@@ -5107,7 +5809,8 @@
     if (p1NameInput) {
       p1NameInput.value = state.p1CustomName;
       const saveCustomPlayerName = () => {
-        const newName = p1NameInput.value.trim() || 'Player 1';
+        const defaultName = (state.online.active && state.online.role === 2) ? 'Player 2' : 'Player 1';
+        const newName = p1NameInput.value.trim() || defaultName;
         if (state.online.active && state.online.role === 2) {
           state.p2CustomName = newName;
           try { localStorage.setItem('dots3d_player_name', newName); } catch (e) {}
@@ -5120,6 +5823,7 @@
         if (state.online.active && state.online.conn && state.online.conn.open) {
           state.online.conn.send({
             type: 'player-name',
+            sessionToken: state.online.sessionToken,
             role: state.online.role,
             name: newName
           });
