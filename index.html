@@ -5672,13 +5672,8 @@
 
     document.getElementById('btn-copy-room').addEventListener('click', e => {
       if (!state.online.roomCode) return;
-      const code = state.online.roomCode;
-      let textToCopy = code;
-      if (typeof window !== 'undefined' && window.location && window.location.protocol.startsWith('http')) {
-        const base = window.location.origin + window.location.pathname;
-        textToCopy = `${base}#room=${code}`;
-      }
-      copyTextSafe(textToCopy, e.currentTarget, 'Copied Code!');
+      const code = state.online.roomCode.trim().toUpperCase();
+      copyTextSafe(code, e.currentTarget, 'Copied Code!');
     });
 
     document.getElementById('btn-online-disconnect').addEventListener('click', () => {
