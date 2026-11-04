@@ -1462,6 +1462,7 @@
       hintsUsed: { 1: false, 2: false },
       onlineUndoUsedThisTurn: false,
       cameraPresetIndex: 0, // 0: 3D Tilt, 1: Isometric, 2: Top-Down
+      adFreeSubscribed: false, // Strictly unverified until native Google Play confirmation
       online: {
         active: false,
         role: null, // 1 (Host) or 2 (Guest)
@@ -7824,24 +7825,46 @@ ${body}`;
     });
 
     // =========================================================================
-    // IN-APP SUBSCRIPTION — SAFE PLACEHOLDER UNTIL NATIVE GOOGLE PLAY BILLING
-    // IMPORTANT: HTML/JavaScript alone must never grant paid access based on a
-    // localStorage flag or a successful-looking browser dialog. The Android app
-    // must verify purchases with Google Play Billing before calling the callbacks
-    // below. This keeps the game free of false subscription activations.
+    // IN-APP SUBSCRIPTION & GOOGLE PLAY BILLING ENTITLEMENT SYSTEM
+    // =========================================================================
+    // SECURITY POLICY:
+    // HTML/JavaScript, localStorage, and client-side browser state CANNOT grant
+    // paid ad-free access. Entitlement is only granted when verified by Google
+    // Play Billing via the native Android application interface.
+    // On startup, fresh entitlement verification is always requested.
+    // If native verification is unavailable, the system fails safely with
+    // standard (ad-supported) access.
     // =========================================================================
     const NO_ADS_SUB_SKU = 'no_ads_monthly_199';
-    state.adFreeSubscribed = false; // Never trust a locally stored paid status.
+    state.adFreeSubscribed = false; // Strictly false until verified by native Google Play
     let subscriptionActionInProgress = false;
 
+    // Internal entitlement status updater
     function setAdFreeSubscriptionStatus(isActive, sourceMsg = '') {
-      state.adFreeSubscribed = isActive === true;
-      try {
-        localStorage.setItem('dots3d_ad_free_subscribed', isActive ? 'true' : 'false');
-      } catch (e) {}
+      if (isActive === true) {
+        // Strict fail-safe guard: Verify that native Android application confirms active entitlement
+        const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
+        const isVerifiedByNative = Boolean(
+          nativeApp &&
+          typeof nativeApp.isAdFreeSubscribed === 'function' &&
+          nativeApp.isAdFreeSubscribed() === true
+        );
+
+        if (!isVerifiedByNative) {
+          console.warn('Subscription activation denied: No verified Google Play Billing entitlement confirmed by native Android app.');
+          state.adFreeSubscribed = false;
+          updateNoAdsUI('Standard Plan (Ads enabled)');
+          return;
+        }
+        state.adFreeSubscribed = true;
+      } else {
+        state.adFreeSubscribed = false;
+      }
+
+      // Zero localStorage persistence! Never store paid status in browser storage.
       updateNoAdsUI(sourceMsg);
 
-      // Notify Android native layer to instantly hide/show bottom adaptive banner ads
+      // Notify Android native layer to toggle banner ads
       const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
       if (nativeApp && typeof nativeApp.setAdFreePassActive === 'function') {
         try { nativeApp.setAdFreePassActive(state.adFreeSubscribed); } catch (e) {}
@@ -7857,12 +7880,17 @@ ${body}`;
       subscriptionActionInProgress = false;
     }
 
-    // Native Android wrapper should call this after Google Play purchase verification.
+    // Official callback invoked by native Android when Google Play purchase completes
     window.onNoAdsPurchaseResult = function (result) {
       clearSubscriptionTimeout();
       if (result && result.verified === true && result.active === true) {
         SoundFX.victory();
-        setAdFreeSubscriptionStatus(true, '✓ Purchase verified by Google Play. Ad-free access is active.');
+        const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
+        if (nativeApp && typeof nativeApp.setAdFreePassActive === 'function') {
+          try { nativeApp.setAdFreePassActive(true); } catch (e) {}
+        }
+        state.adFreeSubscribed = true;
+        updateNoAdsUI('✓ Purchase verified by Google Play. Ad-free access is active.');
       } else {
         setAdFreeSubscriptionStatus(false,
           (result && result.cancelled)
@@ -7871,13 +7899,19 @@ ${body}`;
       }
     };
 
-    // Native Android wrapper should call this after checking current entitlement with Google Play.
+    // Official callback invoked by native Android after querying Google Play Billing entitlements
     window.onNoAdsRestoreResult = function (result) {
       clearSubscriptionTimeout();
       if (result && result.verified === true && result.active === true) {
-        setAdFreeSubscriptionStatus(true, '✓ Your Google Play subscription was verified and restored.');
+        const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
+        if (nativeApp && typeof nativeApp.setAdFreePassActive === 'function') {
+          try { nativeApp.setAdFreePassActive(true); } catch (e) {}
+        }
+        state.adFreeSubscribed = true;
+        updateNoAdsUI('✓ Your Google Play subscription was verified and restored.');
       } else {
-        setAdFreeSubscriptionStatus(false, 'No active, verified subscription was found. Ads remain enabled.');
+        // Expired, cancelled, or never purchased: revoke access immediately
+        setAdFreeSubscriptionStatus(false, 'No active, verified Google Play subscription was found. Ads remain enabled.');
       }
     };
 
@@ -7971,11 +8005,10 @@ ${body}`;
         return;
       }
 
-      // 3. Automatic Google Play Store Launch when published/active
+      // 3. Fallback for external web browser preview
       updateNoAdsUI('Opening Google Play Store for Ad-Free Pass ($1.99/mo)...');
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       if (isMobile) {
-        // Try opening native Play Store app scheme first
         window.location.href = `market://details?id=${pkgId}`;
         setTimeout(() => {
           window.open(playStoreSubUrl, '_blank', 'noopener,noreferrer');
@@ -8001,19 +8034,43 @@ ${body}`;
 
     document.getElementById('btn-noads-restore').addEventListener('click', async () => {
       SoundFX.dotSelect();
+      const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
       const billing = window.NativeBilling;
-      if (!billing || typeof billing.restoreNoAdsSubscription !== 'function') {
-        updateNoAdsUI('Restore is unavailable in this HTML preview. Connect Google Play Billing in the Android app first.');
+
+      if (subscriptionActionInProgress) return;
+
+      if (!nativeApp && (!billing || typeof billing.restoreNoAdsSubscription !== 'function')) {
+        updateNoAdsUI('Restore is only available in the Google Play Android app. Web previews cannot verify Google Play purchases.');
+        setAdFreeSubscriptionStatus(false);
         return;
       }
-      if (subscriptionActionInProgress) return;
+
       subscriptionActionInProgress = true;
-      updateNoAdsUI();
-      try {
-        const result = await billing.restoreNoAdsSubscription(NO_ADS_SUB_SKU);
-        window.onNoAdsRestoreResult(result || { verified: false, active: false });
-      } catch (err) {
-        window.onNoAdsRestoreResult({ verified: false, active: false });
+      updateNoAdsUI('Querying Google Play for active subscriptions...');
+
+      if (nativeApp) {
+        if (typeof nativeApp.restoreNoAdsSubscription === 'function') {
+          try {
+            nativeApp.restoreNoAdsSubscription();
+          } catch (e) {
+            window.onNoAdsRestoreResult({ verified: false, active: false });
+          }
+        } else if (typeof nativeApp.checkSubscriptionEntitlement === 'function') {
+          try {
+            nativeApp.checkSubscriptionEntitlement();
+          } catch (e) {
+            window.onNoAdsRestoreResult({ verified: false, active: false });
+          }
+        } else {
+          window.onNoAdsRestoreResult({ verified: false, active: false });
+        }
+      } else if (billing && typeof billing.restoreNoAdsSubscription === 'function') {
+        try {
+          const result = await billing.restoreNoAdsSubscription(NO_ADS_SUB_SKU);
+          window.onNoAdsRestoreResult(result || { verified: false, active: false });
+        } catch (err) {
+          window.onNoAdsRestoreResult({ verified: false, active: false });
+        }
       }
     });
 
@@ -8038,15 +8095,15 @@ ${body}`;
           updatePlayerOnlineBadges(true, true);
         }
 
-        // 2. Subscription check resume
-        if (subscriptionActionInProgress) {
+        // 2. Subscription check resume: always request fresh verification from Google Play
+        if (subscriptionActionInProgress || state.adFreeSubscribed) {
           setTimeout(() => {
             clearSubscriptionTimeout();
             const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
             if (nativeApp && typeof nativeApp.checkSubscriptionEntitlement === 'function') {
               try { nativeApp.checkSubscriptionEntitlement(); } catch (e) {}
-            } else {
-              updateNoAdsUI();
+            } else if (!nativeApp) {
+              setAdFreeSubscriptionStatus(false);
             }
           }, 800);
         }
@@ -8082,25 +8139,34 @@ ${body}`;
 
     window.onload = () => {
       checkUrlInviteParameters();
-      // 1. Automatic Subscription-Entitlement Check on Startup
+
+      // 1. Fresh Subscription-Entitlement Verification on Startup
+      // Always initialize in safe, unverified (unsubscribed) state
+      state.adFreeSubscribed = false;
+
       const nativeApp = window.AndroidApp || window.AndroidAdMob || window.Android;
-      if (nativeApp && typeof nativeApp.isAdFreeSubscribed === 'function') {
-        try {
-          if (nativeApp.isAdFreeSubscribed()) {
-            setAdFreeSubscriptionStatus(true, '✓ Ad-Free Pass Verified Active');
-          }
-        } catch (e) {}
-      } else {
-        // SafeStorage cached entitlement fallback
-        try {
-          const cachedSub = localStorage.getItem('dots3d_ad_free_subscribed');
-          if (cachedSub === 'true') {
-            setAdFreeSubscriptionStatus(true, '✓ Ad-Free Pass Active');
-          }
-        } catch (e) {}
-      }
       if (nativeApp && typeof nativeApp.checkSubscriptionEntitlement === 'function') {
-        try { nativeApp.checkSubscriptionEntitlement(); } catch (e) {}
+        try {
+          // Always request fresh entitlement verification from Google Play
+          nativeApp.checkSubscriptionEntitlement();
+        } catch (e) {
+          console.warn('Failed to query native subscription entitlement:', e);
+          setAdFreeSubscriptionStatus(false);
+        }
+      } else if (nativeApp && typeof nativeApp.isAdFreeSubscribed === 'function') {
+        try {
+          if (nativeApp.isAdFreeSubscribed() === true) {
+            setAdFreeSubscriptionStatus(true, '✓ Ad-Free Pass Verified Active');
+          } else {
+            setAdFreeSubscriptionStatus(false);
+          }
+        } catch (e) {
+          setAdFreeSubscriptionStatus(false);
+        }
+      } else {
+        // Native verification unavailable (plain web browser, preview, etc.)
+        // Fail safely: Never grant paid ad-free access without verified native Google Play confirmation!
+        setAdFreeSubscriptionStatus(false);
       }
 
       updateShareUrlDisplay();
