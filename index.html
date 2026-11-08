@@ -4878,12 +4878,28 @@
     updateHUD();
   }
 
+  // Shared WebRTC configuration for Android Chrome/WebView and iOS Safari/WKWebView.
+  // STUN helps peers discover routes across networks. A TURN relay with valid
+  // credentials is still required for networks that block direct P2P traffic.
+  const ONLINE_CONNECTION_TIMEOUT_MS = 5 * 60 * 1000;
+  const ONLINE_PEER_OPTIONS = {
+    debug: 1,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ],
+      iceCandidatePoolSize: 4
+    }
+  };
+
   function handleTemporaryDisconnect(remoteRole) {
     if (!state.online.active || state.online.isReconnecting) return;
     state.online.isReconnecting = true;
     stopOnlineHeartbeat();
 
-    const reconnectMsg = '⚡ Network interrupted. Reconnecting to match (25s)...';
+    const reconnectMsg = '⚡ Network interrupted. Reconnecting to match (up to 5 minutes)...';
 
     if (state.online.role === 1) {
       updatePlayerOnlineBadges(true, 'reconnecting', reconnectMsg);
@@ -4896,7 +4912,7 @@
       if (state.online.isReconnecting) {
         disconnectOnline(true, remoteRole, true);
       }
-    }, 25000);
+    }, ONLINE_CONNECTION_TIMEOUT_MS);
 
     // If Guest: initiate automatic WebRTC re-dial to Host room
     if (state.online.role === 2 && state.online.roomCode) {
@@ -4907,17 +4923,15 @@
   function triggerGuestAutoReconnect() {
     if (state.online.role !== 2 || !state.online.roomCode || !state.online.isReconnecting) return;
     state.online.reconnectAttempts = (state.online.reconnectAttempts || 0) + 1;
-    if (state.online.reconnectAttempts > 8) {
-      console.warn('Guest reconnection attempts exceeded limit (8).');
-      return;
-    }
+    // Continue trying until the 5-minute reconnection grace period expires.
+    if (state.online.reconnectAttempts > 150) return;
 
     if (state.online.reconnectTimer) clearTimeout(state.online.reconnectTimer);
     state.online.reconnectTimer = setTimeout(() => {
       if (!state.online.isReconnecting || !state.online.roomCode) return;
       try {
         if (!state.online.peer || state.online.peer.destroyed) {
-          state.online.peer = new Peer();
+          state.online.peer = new Peer(ONLINE_PEER_OPTIONS);
           state.online.peer.on('open', () => {
             if (!state.online.isReconnecting || !state.online.roomCode) return;
             const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode.toLowerCase()}`, { reliable: true });
@@ -5645,7 +5659,7 @@
     const peerId = `dotsboxes3d-xo-${code.toLowerCase()}`;
     onlineStatusText.textContent = retryCount > 0 ? `Resolving collision... Creating Room ${code}...` : `Creating Room ${code}...`;
 
-    const peer = new Peer(peerId);
+    const peer = new Peer(peerId, ONLINE_PEER_OPTIONS);
     state.online.peer = peer;
     state.online.roomCode = code;
     state.online.sessionToken = sessionToken;
@@ -5725,7 +5739,7 @@
           setOnlineBadgeState('waiting', `Waiting (${code})`);
           onlineStatusText.textContent = `Room ${code} is open! Waiting for guest to join...`;
         }
-      }, 12000);
+      }, ONLINE_CONNECTION_TIMEOUT_MS);
 
       // Accept incoming guest connection directly
       const isReconnect = state.online.isReconnecting;
@@ -5788,16 +5802,16 @@
     disconnectOnline(false);
     onlineStatusText.textContent = `Connecting to Room ${raw}...`;
 
-    // 15-second connect timeout for guest
+    // Five-minute connection timeout for guest
     if (state.online.guestConnectTimeout) clearTimeout(state.online.guestConnectTimeout);
     state.online.guestConnectTimeout = setTimeout(() => {
       if (!state.online.handshakeComplete) {
         onlineStatusText.textContent = `Connection timed out. Host room ${raw} did not respond or code is incorrect.`;
         disconnectOnline(false);
       }
-    }, 15000);
+    }, ONLINE_CONNECTION_TIMEOUT_MS);
 
-    const peer = new Peer();
+    const peer = new Peer(ONLINE_PEER_OPTIONS);
     state.online.peer = peer;
 
     peer.on('open', () => {
@@ -5817,11 +5831,12 @@
     });
 
     peer.on('error', err => {
-      if (state.online.guestConnectTimeout) {
-        clearTimeout(state.online.guestConnectTimeout);
-        state.online.guestConnectTimeout = null;
+      console.warn('Guest signaling error:', err);
+      if (err && err.type === 'peer-unavailable') {
+        onlineStatusText.textContent = `Room ${raw} is not available. Confirm the host has created the room and is still online.`;
+      } else {
+        onlineStatusText.textContent = `Connection problem (${(err && err.type) || 'network'}). Waiting up to 5 minutes; check both devices' internet connections.`;
       }
-      onlineStatusText.textContent = `Could not find Room ${raw}. Check the 8-character code with your friend!`;
     });
   });
 
