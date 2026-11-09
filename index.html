@@ -4883,7 +4883,8 @@
   // credentials is still required for networks that block direct P2P traffic.
   const ONLINE_CONNECTION_TIMEOUT_MS = 5 * 60 * 1000;
   const ONLINE_PEER_OPTIONS = {
-    debug: 1,
+    debug: 2,
+    secure: true,
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -4958,6 +4959,23 @@
 
     const connId = 'conn_' + Date.now() + '_' + generateCryptographicToken(4);
     conn._connId = connId;
+    // Browser ICE diagnostics: distinguish server/room discovery from blocked P2P.
+    const monitorICE = () => {
+      if (state.online.connId !== connId) return;
+      const pc = conn.peerConnection;
+      if (!pc || pc.__dotsICEWatched) return;
+      pc.__dotsICEWatched = true;
+      pc.addEventListener('iceconnectionstatechange', () => {
+        if (state.online.connId !== connId) return;
+        const ice = pc.iceConnectionState;
+        console.info('Dots & Boxes WebRTC ICE:', ice);
+        if (!state.online.handshakeComplete && (ice === 'failed' || ice === 'disconnected')) {
+          onlineStatusText.textContent = `WebRTC ICE ${ice}: devices could not establish a direct path. Try different networks or configure a TURN relay.`;
+        }
+      });
+    };
+    setTimeout(monitorICE, 0);
+    setTimeout(monitorICE, 1000);
     state.online.conn = conn;
     state.online.connId = connId;
     state.online.role = role;
@@ -5676,7 +5694,7 @@
       box.classList.add('flex');
       document.getElementById('room-code-text').textContent = code;
       setOnlineBadgeState('waiting', `Waiting (${code})`);
-      onlineStatusText.textContent = `Room ${code} is open! Share this 8-character code with your friend and wait for them to join.`;
+      onlineStatusText.textContent = `PeerJS server connected ✓ Room ${code} is READY. Keep this page open while your friend joins.`;
       SoundFX.dotSelect();
 
       // 15-minute room idle expiration timer for abandoned rooms
@@ -5690,7 +5708,9 @@
     });
 
     peer.on('disconnected', () => {
-      if (state.online.peer === peer && !state.online.active) onlineStatusText.textContent = 'Host lost connection to PeerJS signaling. Recreate the room after checking internet.';
+      if (state.online.peer !== peer) return;
+      onlineStatusText.textContent = 'PeerJS signaling disconnected. Attempting to reconnect...';
+      try { if (!peer.destroyed) peer.reconnect(); } catch (e) { console.warn('PeerJS reconnect:', e); }
     });
 
     peer.on('connection', incomingConn => {
@@ -5728,6 +5748,7 @@
         return;
       }
 
+      onlineStatusText.textContent = `Friend found room ${code}. Establishing WebRTC data channel...`;
       // Reserve guest slot immediately
       state.online.guestSlotReserved = true;
       state.online.guestPeerId = incomingConn.peer;
@@ -5873,6 +5894,7 @@
       peer.on('error', err => {
         if (!isCurrent()) return;
         const type = (err && err.type) || 'network';
+        console.warn('Join PeerJS signaling error:', err);
         reportJoinProgress(type === 'peer-unavailable'
           ? `Room ${raw} was not found. Ask the host to create a room and wait for the room-open confirmation.`
           : `PeerJS error (${type}). Check internet, blockers, and whether the free signaling server is reachable.`, true);
@@ -7459,7 +7481,7 @@ ${body}`;
       winRate: 'Win Rate', playAiBtn: '🤖 Play vs AI Now (+10 AI Achievement Points per Win)',
       aiTier1: 'AI Challenger', aiTier2: 'AI Tactician', aiTier3: 'AI Strategist', aiTier4: 'AI Legend',
       colorTitle: 'Choose Player Line & Box Colors', colorSub: 'Select any of the 15 vibrant 3D neon colors for Player 1 (X) and Player 2 / AI (O)', p1ColorTitle: 'Player 1 Line Color', p2ColorTitle: 'Player 2 / AI Line Color', applyColorsBtn: 'Apply Colors & Continue',
-      onlineSub: 'Connect live using a 6-digit Room Code', onlineHostTitle: '1. Host a Room (Player 1 · X)', onlineHostDesc: 'Generate a room code and send it to your friend.', createRoomBtn: 'Create Room Code', yourCodeLbl: 'Your Room Code', copyBtn: 'Copy',
+      onlineSub: 'Connect live using an 8-character Room Code', onlineHostTitle: '1. Host a Room (Player 1 · X)', onlineHostDesc: 'Generate a room code and send it to your friend.', createRoomBtn: 'Create Room Code', yourCodeLbl: 'Your Room Code', copyBtn: 'Copy',
       onlineJoinTitle: '2. Join Friend (Player 2 · O)', onlineJoinDesc: "Enter the 8-character code from your friend's screen:", joinRoomBtn: 'Join Room', disconnectBtn: 'Disconnect',
       turnCodeTitle: 'Backup: Play by Sharing Turn Codes', copyTurnBtn: 'Copy Current Turn Code', loadTurnBtn: 'Load Turn', backToBoardBtn: 'Back to Game Board',
       shareDesc: 'Invite your friends to download and play <strong>Dots &amp; Boxes 3D — XO Edition</strong> on Google Play Store or in their browser!', closeBtn: 'Close',
