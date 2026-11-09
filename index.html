@@ -4882,18 +4882,45 @@
   // STUN helps peers discover routes across networks. A TURN relay with valid
   // credentials is still required for networks that block direct P2P traffic.
   const ONLINE_CONNECTION_TIMEOUT_MS = 5 * 60 * 1000;
+  const TURN_ENDPOINT = 'https://dotsboxes-turn.ghanem-streetball1.workers.dev/';
   const ONLINE_PEER_OPTIONS = {
     debug: 2,
     secure: true,
     config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-      ],
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       iceCandidatePoolSize: 4
     }
   };
+  let turnCache = null;
+  let turnCacheUntil = 0;
+  let turnPending = null;
+  async function getOnlinePeerOptions() {
+    if (turnCache && Date.now() < turnCacheUntil) return {
+      ...ONLINE_PEER_OPTIONS, config: { ...ONLINE_PEER_OPTIONS.config, iceServers: turnCache }
+    };
+    if (!turnPending) {
+      turnPending = (async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        try {
+          const response = await fetch(TURN_ENDPOINT, { cache: 'no-store', signal: controller.signal });
+          if (!response.ok) throw new Error(`TURN endpoint returned HTTP ${response.status}`);
+          const data = await response.json();
+          if (!Array.isArray(data.iceServers) || !data.iceServers.some(server =>
+            (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url =>
+              typeof url === 'string' && /^turns?:/i.test(url)))) {
+            throw new Error('TURN endpoint returned no relay servers');
+          }
+          turnCache = [{ urls: 'stun:stun.l.google.com:19302' }, ...data.iceServers];
+          // Cloudflare issues 7200-second credentials; refresh well before expiry.
+          turnCacheUntil = Date.now() + 60 * 60 * 1000;
+          return turnCache;
+        } finally { clearTimeout(timeout); }
+      })().finally(() => { turnPending = null; });
+    }
+    const servers = await turnPending;
+    return { ...ONLINE_PEER_OPTIONS, config: { ...ONLINE_PEER_OPTIONS.config, iceServers: servers } };
+  }
 
   function handleTemporaryDisconnect(remoteRole) {
     if (!state.online.active || state.online.isReconnecting) return;
@@ -4928,11 +4955,13 @@
     if (state.online.reconnectAttempts > 150) return;
 
     if (state.online.reconnectTimer) clearTimeout(state.online.reconnectTimer);
-    state.online.reconnectTimer = setTimeout(() => {
+    state.online.reconnectTimer = setTimeout(async () => {
       if (!state.online.isReconnecting || !state.online.roomCode) return;
       try {
+        const peerOptions = await getOnlinePeerOptions();
+        if (!state.online.isReconnecting || !state.online.roomCode) return;
         if (!state.online.peer || state.online.peer.destroyed) {
-          state.online.peer = new Peer(ONLINE_PEER_OPTIONS);
+          state.online.peer = new Peer(peerOptions);
           state.online.peer.on('open', () => {
             if (!state.online.isReconnecting || !state.online.roomCode) return;
             const newConn = state.online.peer.connect(`dotsboxes3d-xo-${state.online.roomCode.toLowerCase()}`, { reliable: true });
@@ -5657,12 +5686,21 @@
     });
   }
 
-  function createHostRoom(retryCount = 0) {
+  async function createHostRoom(retryCount = 0) {
     if (typeof Peer === 'undefined') {
       onlineStatusText.textContent = 'Live connection network unavailable. Please check your internet connection.';
       return;
     }
     disconnectOnline(false);
+    let peerOptions;
+    try {
+      onlineStatusText.textContent = 'Preparing secure multiplayer relay...';
+      peerOptions = await getOnlinePeerOptions();
+    } catch (err) {
+      console.error('TURN setup failed:', err);
+      onlineStatusText.textContent = `Unable to prepare TURN relay: ${err.message}. Please retry.`;
+      return;
+    }
 
     let code, sessionToken;
     try {
@@ -5677,7 +5715,7 @@
     const peerId = `dotsboxes3d-xo-${code.toLowerCase()}`;
     onlineStatusText.textContent = retryCount > 0 ? `Resolving collision... Creating Room ${code}...` : `Creating Room ${code}...`;
 
-    const peer = new Peer(peerId, ONLINE_PEER_OPTIONS);
+    const peer = new Peer(peerId, peerOptions);
     state.online.peer = peer;
     state.online.roomCode = code;
     state.online.sessionToken = sessionToken;
@@ -5819,7 +5857,7 @@
   }
 
   const joinRoomButton = document.getElementById('btn-join-room');
-  joinRoomButton.addEventListener('click', () => {
+  joinRoomButton.addEventListener('click', async () => {
     // Always acknowledge a tap, even if the network is unavailable.
     reportJoinProgress('Join tapped — checking your room code...');
     let raw = joinInputEl ? joinInputEl.value.trim().toUpperCase() : '';
@@ -5838,8 +5876,10 @@
     }
     try {
       disconnectOnline(false);
+      reportJoinProgress('Preparing secure multiplayer relay...');
+      const peerOptions = await getOnlinePeerOptions();
       reportJoinProgress(`Connecting to ${raw}: contacting PeerJS signaling server...`);
-      const peer = new Peer(ONLINE_PEER_OPTIONS);
+      const peer = new Peer(peerOptions);
       state.online.peer = peer;
       state.online.roomCode = raw;
       let connectionOpened = false;
