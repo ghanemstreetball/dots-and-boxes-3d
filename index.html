@@ -4482,17 +4482,9 @@
     }
   });
 
-  window.addEventListener('beforeunload', () => {
-    if (state.online.active && state.online.conn && state.online.conn.open) {
-      try {
-        state.online.conn.send({
-          type: 'peer-leave',
-          sessionToken: state.online.sessionToken,
-          role: state.online.role
-        });
-      } catch (e) {}
-    }
-  });
+  // Do not send a permanent leave message on browser navigation or app lifecycle events.
+  // Mobile WebViews can unload a page during app switching or memory pressure.
+  // Explicit Leave Room still sends peer-leave through disconnectOnline().
 
   // Safe pagehide: do not kill active online room during mobile screen sleep or app switching
   window.addEventListener('pagehide', () => {
@@ -4734,6 +4726,10 @@
     }
   }
 
+  // Background tabs and phone calls can suspend JavaScript timers.
+  // Give the remote player the same five-minute grace period used by reconnection.
+  const ONLINE_BACKGROUND_GRACE_MS = 5 * 60 * 1000;
+
   function startOnlineHeartbeat() {
     stopOnlineHeartbeat();
     lastRemoteHeartbeatTime = Date.now();
@@ -4752,9 +4748,10 @@
 
       const elapsedSincePing = Date.now() - lastRemoteHeartbeatTime;
 
-      // If silence exceeds 35s, trigger temporary disconnect recovery
-      if (elapsedSincePing > 35000) {
-        console.warn('Heartbeat silence exceeded 35s. Triggering disconnect handling.');
+      // A missing heartbeat does not prove a peer has closed the game.
+      // Keep the existing data channel and match intact during short app switches.
+      if (elapsedSincePing > ONLINE_BACKGROUND_GRACE_MS) {
+        console.warn('Heartbeat silence exceeded background grace period. Attempting recovery.');
         const remoteRole = state.online.role === 1 ? 2 : 1;
         handleTemporaryDisconnect(remoteRole);
         return;
@@ -4766,9 +4763,9 @@
         const O_I18N = ONLINE_I18N[state.lang] || ONLINE_I18N.en;
         const awayLabel = O_I18N.away || '(In Background)';
         if (state.online.role === 1) {
-          updatePlayerOnlineBadges(true, 'background', `Friend is in another app (${awayLabel}) — connection stays live!`);
+          updatePlayerOnlineBadges(true, 'background', `Friend may be in another app (${awayLabel}) — match is being preserved.`);
         } else {
-          updatePlayerOnlineBadges('background', true, `Friend is in another app (${awayLabel}) — connection stays live!`);
+          updatePlayerOnlineBadges('background', true, `Friend may be in another app (${awayLabel}) — match is being preserved.`);
         }
       } else {
         // Healthy active connection
@@ -8366,7 +8363,9 @@ ${body}`;
             role: state.online.role
           });
         } catch (e) {}
-        updatePlayerOnlineBadges(true, true);
+        // Do not mark the opponent online until their heartbeat response arrives.
+      } else if (state.online.active && state.online.isReconnecting && state.online.role === 2) {
+        triggerGuestAutoReconnect();
       }
 
       // 2. Subscription check resume: always request fresh verification from Google Play
