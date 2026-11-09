@@ -4728,7 +4728,7 @@
 
   // Background tabs and phone calls can suspend JavaScript timers.
   // Give the remote player the same five-minute grace period used by reconnection.
-  const ONLINE_BACKGROUND_GRACE_MS = 5 * 60 * 1000;
+  const ONLINE_BACKGROUND_GRACE_MS = 10 * 60 * 1000;
 
   function startOnlineHeartbeat() {
     stopOnlineHeartbeat();
@@ -4750,6 +4750,13 @@
 
       // A missing heartbeat does not prove a peer has closed the game.
       // Keep the existing data channel and match intact during short app switches.
+      if (elapsedSincePing > 12000 && document.visibilityState === 'visible') {
+        const pc = state.online.conn && state.online.conn.peerConnection;
+        if (pc && ['failed', 'closed', 'disconnected'].includes(pc.iceConnectionState)) {
+          handleTemporaryDisconnect(state.online.role === 1 ? 2 : 1);
+          return;
+        }
+      }
       if (elapsedSincePing > ONLINE_BACKGROUND_GRACE_MS) {
         console.warn('Heartbeat silence exceeded background grace period. Attempting recovery.');
         const remoteRole = state.online.role === 1 ? 2 : 1;
@@ -4840,6 +4847,7 @@
     state.online.matchId = null;
     state.online.moveNumber = 0;
     state.online.isReconnecting = false;
+    state.online.reconnectStartedAt = 0;
     state.online.reconnectAttempts = 0;
     state.online.handshakeComplete = false;
     state.online.rematchRequestedBy = null;
@@ -4878,7 +4886,7 @@
   // Shared WebRTC configuration for Android Chrome/WebView and iOS Safari/WKWebView.
   // STUN helps peers discover routes across networks. A TURN relay with valid
   // credentials is still required for networks that block direct P2P traffic.
-  const ONLINE_CONNECTION_TIMEOUT_MS = 5 * 60 * 1000;
+  const ONLINE_CONNECTION_TIMEOUT_MS = 10 * 60 * 1000;
   const TURN_ENDPOINT = 'https://dotsboxes-turn.ghanem-streetball1.workers.dev/';
   const ONLINE_PEER_OPTIONS = {
     debug: 2,
@@ -4922,9 +4930,10 @@
   function handleTemporaryDisconnect(remoteRole) {
     if (!state.online.active || state.online.isReconnecting) return;
     state.online.isReconnecting = true;
+    state.online.reconnectStartedAt = Date.now();
     stopOnlineHeartbeat();
 
-    const reconnectMsg = '⚡ Network interrupted. Reconnecting to match (up to 5 minutes)...';
+    const reconnectMsg = '⚡ Network interrupted. Reconnecting to match (up to 10 minutes)...';
 
     if (state.online.role === 1) {
       updatePlayerOnlineBadges(true, 'reconnecting', reconnectMsg);
@@ -4935,7 +4944,8 @@
     clearReconnectTimer();
     state.online.reconnectGraceTimer = setTimeout(() => {
       if (state.online.isReconnecting) {
-        disconnectOnline(true, remoteRole, true);
+        onlineStatusText.textContent = 'Connection not restored within 10 minutes. Match preserved; return to the game to retry.';
+        if (state.online.role === 2) triggerGuestAutoReconnect();
       }
     }, ONLINE_CONNECTION_TIMEOUT_MS);
 
@@ -4949,7 +4959,7 @@
     if (state.online.role !== 2 || !state.online.roomCode || !state.online.isReconnecting) return;
     state.online.reconnectAttempts = (state.online.reconnectAttempts || 0) + 1;
     // Continue trying until the 5-minute reconnection grace period expires.
-    if (state.online.reconnectAttempts > 150) return;
+    if (state.online.reconnectAttempts > 600) return;
 
     if (state.online.reconnectTimer) clearTimeout(state.online.reconnectTimer);
     state.online.reconnectTimer = setTimeout(async () => {
@@ -4957,6 +4967,9 @@
       try {
         const peerOptions = await getOnlinePeerOptions();
         if (!state.online.isReconnecting || !state.online.roomCode) return;
+        if (state.online.peer && state.online.peer.disconnected && !state.online.peer.destroyed) {
+          try { state.online.peer.reconnect(); } catch (e) {}
+        }
         if (!state.online.peer || state.online.peer.destroyed) {
           state.online.peer = new Peer(peerOptions);
           state.online.peer.on('open', () => {
@@ -5004,6 +5017,16 @@
     setTimeout(monitorICE, 1000);
     state.online.conn = conn;
     state.online.connId = connId;
+    if (isReconnect && role === 2) {
+      setTimeout(() => {
+        if (state.online.connId === connId && state.online.isReconnecting &&
+            (!conn.open || !state.online.handshakeComplete ||
+             (conn.peerConnection && ['failed', 'closed'].includes(conn.peerConnection.iceConnectionState)))) {
+          try { conn.close(); } catch (e) {}
+          triggerGuestAutoReconnect();
+        }
+      }, 12000);
+    }
     state.online.role = role;
     state.online.roomCode = roomCode;
 
@@ -5671,6 +5694,7 @@
       if (state.online.connId !== connId) return;
       const remoteRole = role === 1 ? 2 : 1;
       handleTemporaryDisconnect(remoteRole);
+      if (role === 2 && state.online.isReconnecting) triggerGuestAutoReconnect();
     });
 
     conn.on('error', err => {
@@ -5679,6 +5703,7 @@
       if (!conn.open) {
         const remoteRole = role === 1 ? 2 : 1;
         handleTemporaryDisconnect(remoteRole);
+        if (role === 2 && state.online.isReconnecting) triggerGuestAutoReconnect();
       }
     });
   }
@@ -5802,7 +5827,9 @@
       }, ONLINE_CONNECTION_TIMEOUT_MS);
 
       // Accept incoming guest connection directly
-      const isReconnect = state.online.isReconnecting;
+      // A returning guest must receive a state snapshot even when the host's
+      // old data channel died without firing its close event.
+      const isReconnect = Boolean(state.online.handshakeComplete && state.online.sessionToken);
       setupDataConnection(incomingConn, 1, code, isReconnect);
     });
 
@@ -8348,24 +8375,41 @@ ${body}`;
   // Auto-reset loading state and re-check entitlement when returning to game from Play Store
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      // 1. Immediately resume WebRTC heartbeat upon returning to tab to prevent false offline status
-      if (state.online.active && state.online.conn && state.online.conn.open) {
-        lastRemoteHeartbeatTime = Date.now();
-        try {
-          state.online.conn.send({
-            type: 'heartbeat-ping',
-            sessionToken: state.online.sessionToken,
-            time: Date.now()
-          });
-          state.online.conn.send({
-            type: 'peer-resume',
-            sessionToken: state.online.sessionToken,
-            role: state.online.role
-          });
-        } catch (e) {}
-        // Do not mark the opponent online until their heartbeat response arrives.
-      } else if (state.online.active && state.online.isReconnecting && state.online.role === 2) {
-        triggerGuestAutoReconnect();
+      // A mobile browser can retain conn.open=true after its ICE transport dies.
+      // Probe the connection and trigger recovery when the transport is unusable.
+      if (state.online.active) {
+        const peer = state.online.peer;
+        if (peer && peer.disconnected && !peer.destroyed) {
+          try { peer.reconnect(); } catch (e) {}
+        }
+        const conn = state.online.conn;
+        const pc = conn && conn.peerConnection;
+        const ice = pc && pc.iceConnectionState;
+        const deadTransport = !conn || !conn.open ||
+          ice === 'failed' || ice === 'closed' || ice === 'disconnected';
+        if (deadTransport) {
+          handleTemporaryDisconnect(state.online.role === 1 ? 2 : 1);
+          if (state.online.role === 2) triggerGuestAutoReconnect();
+        } else {
+          try {
+            conn.send({ type: 'heartbeat-ping', sessionToken: state.online.sessionToken, time: Date.now() });
+            conn.send({ type: 'peer-resume', sessionToken: state.online.sessionToken, role: state.online.role });
+          } catch (e) {
+            handleTemporaryDisconnect(state.online.role === 1 ? 2 : 1);
+            if (state.online.role === 2) triggerGuestAutoReconnect();
+          }
+          // Do not reset lastRemoteHeartbeatTime until a real response arrives.
+          const resumeProbeStarted = Date.now();
+          setTimeout(() => {
+            if (!state.online.active || document.visibilityState !== 'visible') return;
+            if (state.online.conn !== conn) return;
+            if (lastRemoteHeartbeatTime < resumeProbeStarted) {
+              handleTemporaryDisconnect(state.online.role === 1 ? 2 : 1);
+              if (state.online.role === 2) triggerGuestAutoReconnect();
+            }
+          }, 15000);
+          if (state.online.isReconnecting && state.online.role === 2) triggerGuestAutoReconnect();
+        }
       }
 
       // 2. Subscription check resume: always request fresh verification from Google Play
