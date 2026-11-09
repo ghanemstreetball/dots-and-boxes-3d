@@ -741,7 +741,7 @@
     </div>
 
     <!-- Connection Status Banner -->
-    <div id="online-status-box" class="mb-3 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 flex items-center justify-between gap-2">
+    <div id="online-status-box" role="status" aria-live="polite" class="mb-3 p-3 rounded-2xl bg-slate-900/90 border border-sky-500/50 text-xs text-white font-semibold flex items-center justify-between gap-2">
       <span id="online-status-text">Create a room and share the 8-character code with your friend, or enter their code below.</span>
       <button id="btn-online-disconnect" type="button" class="hidden px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-300 font-semibold shrink-0">
         Disconnect
@@ -5689,6 +5689,10 @@
       }, 15 * 60 * 1000);
     });
 
+    peer.on('disconnected', () => {
+      if (state.online.peer === peer && !state.online.active) onlineStatusText.textContent = 'Host lost connection to PeerJS signaling. Recreate the room after checking internet.';
+    });
+
     peer.on('connection', incomingConn => {
       // If room is already full with active connected guest
       if (state.online.active && state.online.conn && state.online.conn.open && state.online.handshakeComplete) {
@@ -5783,61 +5787,104 @@
     });
   }
 
-  document.getElementById('btn-join-room').addEventListener('click', () => {
+  // Visible connection diagnostics for Safari, Android Chrome and Android WebView.
+  function reportJoinProgress(message, isError = false) {
+    onlineStatusText.textContent = message;
+    const statusBox = document.getElementById('online-status-box');
+    if (statusBox) {
+      statusBox.style.borderColor = isError ? '#fb7185' : '#38bdf8';
+      statusBox.style.backgroundColor = isError ? 'rgba(127,29,29,.4)' : 'rgba(12,74,110,.35)';
+    }
+  }
+
+  const joinRoomButton = document.getElementById('btn-join-room');
+  joinRoomButton.addEventListener('click', () => {
+    // Always acknowledge a tap, even if the network is unavailable.
+    reportJoinProgress('Join tapped — checking your room code...');
     let raw = joinInputEl ? joinInputEl.value.trim().toUpperCase() : '';
     if (raw.includes('ROOM=')) {
       const m = raw.match(/ROOM=([0-9A-Z]{8})/);
       if (m) raw = m[1];
     }
     raw = raw.replace(/[^0-9A-Z]/g, '');
-
     if (raw.length !== 8) {
-      onlineStatusText.textContent = 'Please enter the 8-character Room Code (letters & numbers) from your friend.';
+      reportJoinProgress('Please enter the complete 8-character room code.', true);
       return;
     }
     if (typeof Peer === 'undefined') {
-      onlineStatusText.textContent = 'Live connection network unavailable. Please check your internet connection.';
+      reportJoinProgress('PeerJS did not load. Check your connection or content blockers, then reload.', true);
       return;
     }
-    disconnectOnline(false);
-    onlineStatusText.textContent = `Connecting to Room ${raw}...`;
-
-    // Five-minute connection timeout for guest
-    if (state.online.guestConnectTimeout) clearTimeout(state.online.guestConnectTimeout);
-    state.online.guestConnectTimeout = setTimeout(() => {
-      if (!state.online.handshakeComplete) {
-        onlineStatusText.textContent = `Connection timed out. Host room ${raw} did not respond or code is incorrect.`;
-        disconnectOnline(false);
-      }
-    }, ONLINE_CONNECTION_TIMEOUT_MS);
-
-    const peer = new Peer(ONLINE_PEER_OPTIONS);
-    state.online.peer = peer;
-
-    peer.on('open', () => {
-      const conn = peer.connect(`dotsboxes3d-xo-${raw.toLowerCase()}`, { reliable: true });
+    try {
+      disconnectOnline(false);
+      reportJoinProgress(`Connecting to ${raw}: contacting PeerJS signaling server...`);
+      const peer = new Peer(ONLINE_PEER_OPTIONS);
+      state.online.peer = peer;
       state.online.roomCode = raw;
+      let connectionOpened = false;
+      let connectionAttempted = false;
+      const isCurrent = () => state.online.peer === peer;
 
-      conn.on('open', () => {
-        const myGuestName = (localStorage.getItem('dots3d_player_name') || state.p2CustomName || '').trim() || 'Player 2';
-        state.p2CustomName = myGuestName;
-        conn.send({
-          type: 'handshake-join',
-          guestName: myGuestName
+      if (state.online.guestConnectTimeout) clearTimeout(state.online.guestConnectTimeout);
+      state.online.guestConnectTimeout = setTimeout(() => {
+        if (!isCurrent() || state.online.handshakeComplete) return;
+        reportJoinProgress(`Could not connect to ${raw} after 5 minutes. Check the host room and try a different network. A TURN relay may be required.`, true);
+        // Keep the failure visible instead of replacing it with 'Disconnected'.
+        disconnectOnline(false);
+        reportJoinProgress(`Connection timed out for ${raw}. Check the code, host, and networks.`, true);
+      }, ONLINE_CONNECTION_TIMEOUT_MS);
+
+      // An early warning is more helpful than waiting five minutes with no feedback.
+      setTimeout(() => {
+        if (!isCurrent() || state.online.handshakeComplete) return;
+        if (!connectionAttempted) reportJoinProgress('Still contacting PeerJS. Check internet access and refresh both devices.', true);
+        else if (!connectionOpened) reportJoinProgress(`Room ${raw} has not opened a WebRTC connection yet. Verify host is waiting; if it is, network restrictions or TURN may be involved.`, true);
+        else reportJoinProgress('Data channel opened; waiting for game handshake...');
+      }, 20000);
+
+      peer.on('open', () => {
+        if (!isCurrent()) return;
+        connectionAttempted = true;
+        reportJoinProgress(`PeerJS connected. Finding host room ${raw}...`);
+        let conn;
+        try { conn = peer.connect(`dotsboxes3d-xo-${raw.toLowerCase()}`, { reliable: true }); }
+        catch (err) {
+          reportJoinProgress(`Could not start room connection: ${err.message || err}`, true);
+          return;
+        }
+        conn.on('open', () => {
+          if (!isCurrent()) return;
+          connectionOpened = true;
+          reportJoinProgress('WebRTC connected! Exchanging game information...');
+          const myGuestName = (localStorage.getItem('dots3d_player_name') || state.p2CustomName || '').trim() || 'Player 2';
+          state.p2CustomName = myGuestName;
+          conn.send({ type: 'handshake-join', guestName: myGuestName });
         });
+        conn.on('error', err => {
+          if (!isCurrent() || state.online.handshakeComplete) return;
+          reportJoinProgress(`WebRTC connection error: ${(err && (err.type || err.message)) || 'unknown'}. Try another network; TURN may be needed.`, true);
+        });
+        conn.on('close', () => {
+          if (!isCurrent() || state.online.handshakeComplete) return;
+          reportJoinProgress('Connection closed before joining. Verify host is still in the room.', true);
+        });
+        setupDataConnection(conn, 2, raw, false);
       });
-
-      setupDataConnection(conn, 2, raw, false);
-    });
-
-    peer.on('error', err => {
-      console.warn('Guest signaling error:', err);
-      if (err && err.type === 'peer-unavailable') {
-        onlineStatusText.textContent = `Room ${raw} is not available. Confirm the host has created the room and is still online.`;
-      } else {
-        onlineStatusText.textContent = `Connection problem (${(err && err.type) || 'network'}). Waiting up to 5 minutes; check both devices' internet connections.`;
-      }
-    });
+      peer.on('error', err => {
+        if (!isCurrent()) return;
+        const type = (err && err.type) || 'network';
+        reportJoinProgress(type === 'peer-unavailable'
+          ? `Room ${raw} was not found. Ask the host to create a room and wait for the room-open confirmation.`
+          : `PeerJS error (${type}). Check internet, blockers, and whether the free signaling server is reachable.`, true);
+      });
+      peer.on('disconnected', () => {
+        if (!isCurrent() || state.online.handshakeComplete) return;
+        reportJoinProgress('Disconnected from the PeerJS signaling server. Check internet and retry.', true);
+      });
+    } catch (err) {
+      console.error('Join Room handler failed:', err);
+      reportJoinProgress(`Join Room error: ${(err && err.message) || 'unknown error'}`, true);
+    }
   });
 
   document.getElementById('btn-copy-room').addEventListener('click', e => {
