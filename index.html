@@ -798,6 +798,8 @@
           <p id="online-host-desc" class="text-[11px] text-slate-400 mb-3">Generate a room code and send it to your friend.</p>
         </div>
         <div>
+          <button id="btn-resume-online" type="button" class="hidden w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow mb-1">↻ Resume Previous Online Match</button>
+          <div id="resume-online-details" class="hidden text-[10px] text-emerald-200 mb-3 text-center"></div>
           <button id="btn-create-room" type="button" class="w-full py-2 px-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow transition mb-2">
             Create Room Code
           </button>
@@ -4789,6 +4791,9 @@
   }
 
   function disconnectOnline(peerDisconnected = false, remoteRoleNumber = null, permanent = false) {
+    // Explicit room exit or a newly-created room invalidates the old checkpoint.
+    // Recovery reads the checkpoint before disconnecting; its copy stays in memory.
+    if (permanent) clearOnlineResume();
     stopOnlineHeartbeat();
     clearReconnectTimer();
 
@@ -4882,6 +4887,125 @@
     }
     updateHUD();
   }
+
+  // Resume a browser-terminated online match on this SAME browser/profile.
+  // Save only short-lived session data; never trust local storage as authority.
+  const ONLINE_RESUME_KEY = 'dotsboxes3d_online_resume_v1';
+  const ONLINE_RESUME_LIFETIME_MS = 10 * 60 * 1000;
+  let onlineResumeInProgress = false;
+  function readOnlineResume() {
+    try {
+      const raw = localStorage.getItem(ONLINE_RESUME_KEY);
+      if (!raw) return null;
+      const saved = JSON.parse(raw);
+      if (!saved || saved.version !== 1 || ![1, 2].includes(saved.role) ||
+          !/^[A-Z0-9]{8}$/.test(saved.roomCode || '') ||
+          typeof saved.sessionToken !== 'string' || saved.sessionToken.length < 12 ||
+          !saved.fullState || !Number.isFinite(saved.savedAt) ||
+          Date.now() - saved.savedAt > ONLINE_RESUME_LIFETIME_MS ||
+          saved.savedAt > Date.now() + 60000) {
+        localStorage.removeItem(ONLINE_RESUME_KEY);
+        return null;
+      }
+      return saved;
+    } catch (e) { return null; }
+  }
+  function clearOnlineResume() {
+    try { localStorage.removeItem(ONLINE_RESUME_KEY); } catch (e) {}
+    updateOnlineResumeButton();
+  }
+  function saveOnlineResume() {
+    if (!state.online.roomCode || !state.online.sessionToken ||
+        !state.online.handshakeComplete || ![1, 2].includes(state.online.role)) return;
+    try {
+      localStorage.setItem(ONLINE_RESUME_KEY, JSON.stringify({
+        version: 1, savedAt: Date.now(), role: state.online.role,
+        roomCode: state.online.roomCode, sessionToken: state.online.sessionToken,
+        matchId: state.online.matchId, fullState: getSerializableGameState()
+      }));
+      updateOnlineResumeButton();
+    } catch (e) { console.warn('Online resume save unavailable:', e); }
+  }
+  function updateOnlineResumeButton() {
+    const button = document.getElementById('btn-resume-online');
+    const details = document.getElementById('resume-online-details');
+    if (!button) return;
+    const saved = readOnlineResume();
+    const show = Boolean(saved && !state.online.active && !onlineResumeInProgress);
+    button.classList.toggle('hidden', !show);
+    if (details) {
+      details.classList.toggle('hidden', !show);
+      if (show) details.textContent = `Room ${saved.roomCode} · ${saved.role === 1 ? 'Host' : 'Guest'} · Saved match (10-minute recovery)`;
+    }
+  }
+  async function resumeSavedOnlineMatch() {
+    const saved = readOnlineResume();
+    if (!saved || onlineResumeInProgress) { updateOnlineResumeButton(); return; }
+    if (typeof Peer === 'undefined') {
+      onlineStatusText.textContent = 'PeerJS unavailable. Connect to internet and retry Resume Match.';
+      return;
+    }
+    onlineResumeInProgress = true;
+    const button = document.getElementById('btn-resume-online');
+    if (button) button.disabled = true;
+    try {
+      // The host recreates the EXACT same PeerJS ID. The guest reconnects with
+      // its original secret; the host remains the authority for the board.
+      if (saved.role === 1) {
+        await createHostRoom(0, saved);
+      } else {
+        disconnectOnline(false);
+        const peerOptions = await getOnlinePeerOptions();
+        state.online.role = 2;
+        state.online.roomCode = saved.roomCode;
+        state.online.sessionToken = saved.sessionToken;
+        state.online.matchId = saved.matchId;
+        state.online.handshakeComplete = true;
+        if (!applyFullGameState(saved.fullState)) throw new Error('Saved board could not be restored');
+        state.online.active = true;
+        state.online.isReconnecting = true;
+        state.online.reconnectStartedAt = Date.now();
+        const peer = new Peer(peerOptions);
+        state.online.peer = peer;
+        peer.on('open', () => {
+          if (state.online.peer !== peer) return;
+          const conn = peer.connect(`dotsboxes3d-xo-${saved.roomCode.toLowerCase()}`, { reliable: true });
+          setupDataConnection(conn, 2, saved.roomCode, true);
+          onlineStatusText.textContent = 'Restoring saved match. Waiting for host to return...';
+        });
+        peer.on('error', err => {
+          if (state.online.peer !== peer) return;
+          console.warn('Resume guest signaling:', err);
+          if (!state.online.isReconnecting) return;
+          triggerGuestAutoReconnect();
+        });
+        onlineStatusText.textContent = 'Resuming your saved game. Waiting for host...';
+        setOnlineBadgeState('waiting', 'Resuming match');
+        // Keep trying if the host is still reopening the browser.
+        setTimeout(() => {
+          if (state.online.role === 2 && state.online.isReconnecting) triggerGuestAutoReconnect();
+        }, 14000);
+      }
+    } catch (err) {
+      console.warn('Resume match failed:', err);
+      onlineStatusText.textContent = `Could not resume yet: ${err.message || err}. Tap Resume Match to retry.`;
+      // Do not discard the saved match on a temporary network error.
+      updateOnlineResumeButton();
+    } finally {
+      onlineResumeInProgress = false;
+      if (button) button.disabled = false;
+      updateOnlineResumeButton();
+    }
+  }
+  document.getElementById('btn-resume-online').addEventListener('click', resumeSavedOnlineMatch);
+  window.addEventListener('pagehide', saveOnlineResume);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveOnlineResume();
+    else updateOnlineResumeButton();
+  });
+  // Periodic checkpoints include scores, turns, and completed lines.
+  setInterval(() => { if (state.online.active) saveOnlineResume(); }, 2000);
+  setTimeout(updateOnlineResumeButton, 300);
 
   // Shared WebRTC configuration for Android Chrome/WebView and iOS Safari/WKWebView.
   // STUN helps peers discover routes across networks. A TURN relay with valid
@@ -5708,12 +5832,13 @@
     });
   }
 
-  async function createHostRoom(retryCount = 0) {
+  async function createHostRoom(retryCount = 0, recovery = null) {
     if (typeof Peer === 'undefined') {
       onlineStatusText.textContent = 'Live connection network unavailable. Please check your internet connection.';
       return;
     }
     disconnectOnline(false);
+    if (!recovery) clearOnlineResume();
     let peerOptions;
     try {
       onlineStatusText.textContent = 'Preparing secure multiplayer relay...';
@@ -5726,8 +5851,8 @@
 
     let code, sessionToken;
     try {
-      code = generate8CharRoomCode();
-      sessionToken = generateCryptographicToken(16);
+      code = recovery ? recovery.roomCode : generate8CharRoomCode();
+      sessionToken = recovery ? recovery.sessionToken : generateCryptographicToken(16);
     } catch (err) {
       console.error('Failed to generate cryptographic randomness:', err);
       onlineStatusText.textContent = 'Cryptographic random generator is unavailable on this device. Room creation aborted.';
@@ -5741,10 +5866,22 @@
     state.online.peer = peer;
     state.online.roomCode = code;
     state.online.sessionToken = sessionToken;
-    state.online.matchId = 'm_' + Date.now() + '_' + generateCryptographicToken(4);
+    state.online.matchId = recovery ? recovery.matchId : 'm_' + Date.now() + '_' + generateCryptographicToken(4);
     state.online.moveNumber = 0;
     state.online.handshakeComplete = false;
-    state.online.isReconnecting = false;
+    if (recovery) {
+      state.online.role = 1;
+      if (!applyFullGameState(recovery.fullState)) {
+        onlineStatusText.textContent = 'Saved board invalid. Please start a new room.';
+        try { peer.destroy(); } catch (e) {}
+        return;
+      }
+      state.online.handshakeComplete = true;
+      state.online.active = true;
+      state.online.isReconnecting = true;
+      state.online.reconnectStartedAt = Date.now();
+    }
+    state.online.isReconnecting = Boolean(recovery);
     state.online.guestSlotReserved = false;
     state.online.guestPeerId = null;
 
@@ -5754,7 +5891,10 @@
       box.classList.add('flex');
       document.getElementById('room-code-text').textContent = code;
       setOnlineBadgeState('waiting', `Waiting (${code})`);
-      onlineStatusText.textContent = `PeerJS server connected ✓ Room ${code} is READY. Keep this page open while your friend joins.`;
+      onlineStatusText.textContent = recovery
+        ? `Saved room ${code} restored. Waiting for your friend to Resume Match...`
+        : `PeerJS server connected ✓ Room ${code} is READY. Keep this page open while your friend joins.`;
+      updateOnlineResumeButton();
       SoundFX.dotSelect();
 
       // 15-minute room idle expiration timer for abandoned rooms
@@ -5836,6 +5976,13 @@
     peer.on('error', err => {
       console.warn('Host Peer notice:', err.type, err);
       // Room ID collision handling (extremely rare with 1.1 trillion combinations)
+      if (err.type === 'unavailable-id' && recovery) {
+        onlineStatusText.textContent = 'Previous room ID is already active. Close the older tab or wait, then retry Resume Match.';
+        try { peer.destroy(); } catch (e) {}
+        state.online.active = false;
+        updateOnlineResumeButton();
+        return;
+      }
       if (err.type === 'unavailable-id') {
         if (retryCount < 5) {
           onlineStatusText.textContent = 'Room code collision, generating new code...';
@@ -5900,6 +6047,7 @@
     }
     try {
       disconnectOnline(false);
+      clearOnlineResume();
       reportJoinProgress('Preparing secure multiplayer relay...');
       const peerOptions = await getOnlinePeerOptions();
       reportJoinProgress(`Connecting to ${raw}: contacting PeerJS signaling server...`);
