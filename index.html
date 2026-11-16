@@ -336,7 +336,7 @@
       </div>
       <div>
         <h1 class="font-display font-extrabold text-sm sm:text-base leading-tight tracking-tight text-white flex items-center justify-center gap-1.5">
-          DOTS &amp; BOXES
+          Dots &amp; Boxes 3D
         </h1>
       </div>
     </div>
@@ -1622,7 +1622,7 @@
     { id: 'royal-indigo',   name: 'Royal Indigo',    css: '#818cf8', rgb: '129, 140, 248', hex: 0x818cf8, emissive: 0x4f46e5, base: 0x312e81 },
     { id: 'crimson-ruby',   name: 'Crimson Ruby',    css: '#f87171', rgb: '248, 113, 113', hex: 0xf87171, emissive: 0xdc2626, base: 0x7f1d1d },
     { id: 'aqua-teal',      name: 'Aqua Teal',       css: '#2dd4bf', rgb: '45, 212, 191',  hex: 0x2dd4bf, emissive: 0x0d9488, base: 0x134e4a },
-    { id: 'tangerine-coral',name: 'Tangerine Coral', css: '#ff6b6b', rgb: '255, 107, 107', hex: 0xff6b6b, emissive: 0xe03131, base: 0x7d1a1a },
+    { id: 'tangerine-coral',name: 'Deep Navy Blue',  css: '#172554', rgb: '23, 37, 84',   hex: 0x172554, emissive: 0x1e3a8a, base: 0x0b102e },
     { id: 'amethyst-orchid',name: 'Amethyst Orchid', css: '#e879f9', rgb: '232, 121, 249', hex: 0xe879f9, emissive: 0xc026d3, base: 0x701a75 },
     { id: 'arctic-ice',     name: 'Arctic Ice',      css: '#67e8f9', rgb: '103, 232, 249', hex: 0x67e8f9, emissive: 0x0891b2, base: 0x164e63 },
     { id: 'pearl-silver',   name: 'Pearl Silver',    css: '#f1f5f9', rgb: '241, 245, 249', hex: 0xf1f5f9, emissive: 0x64748b, base: 0x334155 },
@@ -3373,8 +3373,9 @@
     document.documentElement.style.setProperty('--p2-color', c2.css);
     document.documentElement.style.setProperty('--p2-rgb', c2.rgb);
 
-    document.getElementById('header-p1-dot').style.backgroundColor = c1.css;
-    document.getElementById('header-p2-dot').style.backgroundColor = c2.css;
+    // Keep the Players Colors button icon blue/orange regardless of match colors.
+    document.getElementById('header-p1-dot').style.backgroundColor = '#38bdf8';
+    document.getElementById('header-p2-dot').style.backgroundColor = '#fb923c';
 
     const p1Badge = document.getElementById('btn-p1-badge');
     p1Badge.style.backgroundColor = `rgba(${c1.rgb}, 0.18)`;
