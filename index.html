@@ -690,6 +690,7 @@
 #result-celebration.loss{background:linear-gradient(130deg,#172554,#312e81);border-color:#93c5fd;}
 #result-celebration .result-face{position:relative;z-index:2;}
 #result-celebration .result-head{position:relative;z-index:2;}
+#result-celebration .result-face .result-3d-emoji{display:block;width:132px;max-width:65vw;height:auto;margin:auto;filter:drop-shadow(0 6px 10px #0008);object-fit:contain;}
 #result-celebration .result-face svg{display:block;width:74px;height:74px;margin:auto;filter:drop-shadow(0 4px 8px #0008);}
 #result-celebration.win .result-face{animation:result-bop .65s ease-in-out 5;}
 #result-celebration.loss .result-face{animation:result-wobble 1.3s ease-in-out 2;}
@@ -3505,6 +3506,22 @@
     syncModeAndAIDiffUI();
   }
 
+  // Audio files are shipped alongside index.html inside Android assets.
+  const matchResultAudio = {
+    winner: new Audio('winner.wav'),
+    loser: new Audio('loser.wav')
+  };
+  Object.values(matchResultAudio).forEach(audio => { audio.preload = 'auto'; audio.volume = 0.85; });
+  function playMatchResultAudio(kind) {
+    Object.values(matchResultAudio).forEach(audio => { audio.pause(); audio.currentTime = 0; });
+    if (SoundFX.muted) return;
+    const audio = matchResultAudio[kind];
+    if (!audio) return;
+    audio.currentTime = 0;
+    const promise = audio.play();
+    if (promise && typeof promise.catch === 'function') promise.catch(err => console.warn('Match result sound unavailable', err));
+  }
+
   function showVictoryModal() {
     document.getElementById('btn-return-match-results')?.classList.add('hidden');
     const modal = document.getElementById('victory-modal');
@@ -3567,19 +3584,17 @@
     celebration.classList.toggle('loss', localLost);
     celebration.classList.toggle('win', winner !== 0 && (localWon || (!state.online.active && !state.vsAI)));
     celebration.classList.toggle('draw', winner === 0);
-    // SVG avoids missing-emoji tofu squares on older Android WebViews.
-    const sadFaceSvg = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Funny sad face"><defs><radialGradient id="sadgold"><stop stop-color="#fff6a1"/><stop offset="1" stop-color="#ffb300"/></radialGradient></defs><circle cx="50" cy="50" r="46" fill="url(#sadgold)" stroke="#db8700" stroke-width="3"/><path d="M22 34q12 -11 23 -1M57 33q12 -10 23 1" fill="none" stroke="#6b3c10" stroke-width="5" stroke-linecap="round"/><ellipse cx="34" cy="44" rx="5" ry="8" fill="#332211"/><ellipse cx="67" cy="44" rx="5" ry="8" fill="#332211"/><path d="M32 78 Q50 53 70 78" fill="none" stroke="#6b2e10" stroke-width="6" stroke-linecap="round"/><path d="M75 53 Q91 73 76 80 Q66 76 75 53" fill="#5bc9ff" stroke="#b8edff" stroke-width="2"/></svg>`;
-    const trophySvg = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Gold trophy"><defs><linearGradient id="trophyGold"><stop stop-color="#fff7a5"/><stop offset=".45" stop-color="#ffcf34"/><stop offset="1" stop-color="#d97706"/></linearGradient></defs><path d="M25 18H75V47Q75 70 50 73Q25 70 25 47Z" fill="url(#trophyGold)" stroke="#fff4a3" stroke-width="3"/><path d="M25 25H10V42Q10 56 29 58M75 25H90V42Q90 56 71 58" fill="none" stroke="#ffc22d" stroke-width="7" stroke-linejoin="round"/><path d="M50 72V85M31 89H69" stroke="#ffdb55" stroke-width="9" stroke-linecap="round"/><path d="m50 29 5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2Z" fill="#fff5a3"/></svg>`;
-    face.innerHTML = winner === 0 ? '🤝' : (localWon || (!state.online.active && !state.vsAI)) ? trophySvg : sadFaceSvg;
-    heading.textContent = winner === 0 ? "It's a Draw!" : localWon ? 'YOU WIN! 🎉' : (state.online.active || state.vsAI) ? 'Nice try! Next time! 😅' : 'Player 2 Wins! 🎉';
-    // On one-device two-player mode both players share the screen, so celebrate the winner.
-    if (!state.online.active && !state.vsAI && winner === 2) {
-      face.innerHTML = trophySvg;
-      celebration.classList.remove('loss');
-      heading.textContent = 'Player 2 Wins! 🎉';
-    }
+    // Custom emoji-style SVG artwork avoids empty-square glyphs on older Android WebViews.
+    // Winner: 🥳 party face. Loser: 😭 loudly crying face.
+    const isSharedScreen = !state.online.active && !state.vsAI;
+    const showWinner = winner !== 0 && (localWon || isSharedScreen);
+    const showLoser = winner !== 0 && !showWinner;
+    celebration.classList.toggle('win', showWinner);
+    celebration.classList.toggle('loss', showLoser);
+    face.innerHTML = winner === 0 ? '🤝' : showWinner ? '<img src="winner_3d.png" alt="Victory cheer" class="result-3d-emoji">' : '<img src="loser_3d.png" alt="Loud crying" class="result-3d-emoji">';
+    heading.textContent = winner === 0 ? "It's a Draw!" : showWinner ? (isSharedScreen ? `Player ${winner} Wins! 🎉` : 'YOU WIN! 🎉') : 'Better luck next time!';
     confetti.replaceChildren();
-    if (winner !== 0 && (localWon || (!state.online.active && !state.vsAI))) {
+    if (showWinner) {
       const colors = ['#facc15','#38bdf8','#fb7185','#34d399','#c084fc'];
       for (let i=0;i<95;i++) {
         const piece=document.createElement('i');
@@ -3592,11 +3607,10 @@
         confetti.appendChild(piece);
       }
     }
-    // Respect the existing SoundFX mute switch.
+    // Play the exact supplied WAV files. Existing sound/mute setting is respected.
     try {
       if (winner === 0) SoundFX.drawJingle();
-      else if (localLost && (state.online.active || state.vsAI)) SoundFX.sillyLoss();
-      else { SoundFX.happyWin(); SoundFX.crowdCheer(); }
+      else playMatchResultAudio(showWinner ? 'winner' : 'loser');
     } catch(e) { console.warn('Result audio unavailable',e); }
     try { leaderboardRecordMatch(winner); } catch(e) { console.warn('Leaderboard update unavailable',e); }
 
