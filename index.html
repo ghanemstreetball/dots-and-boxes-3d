@@ -4752,14 +4752,31 @@
 
   let clock = new THREE.Clock();
 
-  function animate() {
+  // Limit 3D drawing to 30 FPS instead of redrawing at 60/120 FPS.
+  // Do not render while the app is hidden (e.g. an ad or another app is open).
+  // Keep the game logic, online heartbeat and audio independent of this loop.
+  const renderIntervalMs = 1000 / 30;
+  let lastRenderTime = 0;
+  let lastAnimationTime = 0;
+  function animate(frameTime = 0) {
     requestAnimationFrame(animate);
+    if (document.hidden) {
+      lastRenderTime = 0;
+      lastAnimationTime = 0;
+      return;
+    }
+    if (lastRenderTime && frameTime - lastRenderTime < renderIntervalMs - 1) return;
+    const frameScale = lastAnimationTime
+      ? Math.min(2.5, Math.max(0.5, (frameTime - lastAnimationTime) / (1000 / 60)))
+      : 1;
+    lastRenderTime = frameTime;
+    lastAnimationTime = frameTime;
     const elapsed = clock.getElapsedTime();
 
     // Smoothly interpolate camera spherical coordinates
-    camSpherical.radius += (camSpherical.targetRadius - camSpherical.radius) * 0.1;
-    camSpherical.theta += (camSpherical.targetTheta - camSpherical.theta) * 0.1;
-    camSpherical.phi += (camSpherical.targetPhi - camSpherical.phi) * 0.1;
+    camSpherical.radius += (camSpherical.targetRadius - camSpherical.radius) * (1 - Math.pow(0.9, frameScale));
+    camSpherical.theta += (camSpherical.targetTheta - camSpherical.theta) * (1 - Math.pow(0.9, frameScale));
+    camSpherical.phi += (camSpherical.targetPhi - camSpherical.phi) * (1 - Math.pow(0.9, frameScale));
 
     camera.position.x = camSpherical.radius * Math.sin(camSpherical.phi) * Math.sin(camSpherical.theta);
     camera.position.y = camSpherical.radius * Math.cos(camSpherical.phi);
@@ -4769,7 +4786,7 @@
     // Animate placed beams & captured 3D XO boxes
     for (let i = animatedItems.length - 1; i >= 0; i--) {
       const item = animatedItems[i];
-      item.progress += 0.08;
+      item.progress += 0.08 * frameScale;
       if (item.type === 'beam-snap') {
         const s = Math.min(1, item.progress * 1.4);
         item.obj.scale.set(s, s, s);
@@ -4809,11 +4826,11 @@
     // Update celebration particles
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.mesh.position.x += p.vx;
-      p.mesh.position.y += p.vy;
-      p.mesh.position.z += p.vz;
-      p.vy -= 0.0045; // gravity
-      p.life -= 0.025;
+      p.mesh.position.x += p.vx * frameScale;
+      p.mesh.position.y += p.vy * frameScale;
+      p.mesh.position.z += p.vz * frameScale;
+      p.vy -= 0.0045 * frameScale; // gravity
+      p.life -= 0.025 * frameScale;
       p.mesh.material.opacity = Math.max(0, p.life);
       if (p.life <= 0) {
         particlesGroup.remove(p.mesh);
