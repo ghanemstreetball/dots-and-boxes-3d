@@ -46,7 +46,7 @@
     }
     body {
       font-family: 'Inter', sans-serif;
-      background: radial-gradient(circle at 50% 15%, #1e293b 0%, #090d16 75%);
+      background: #090d16;
       color: #f8fafc;
       display: flex;
       flex-direction: column;
@@ -315,9 +315,76 @@
     /* The game board takes the available height; ads remain below controls. */
     #canvas-container { min-height: 0 !important; }
     #bottom-controls-square { flex-shrink: 0; }
-  </style>
+
+    /* Optional arcade test features — no permanent animation loop */
+    #arcade-pop {position:absolute;top:26%;left:50%;transform:translate(-50%,-50%) scale(.7);z-index:35;pointer-events:none;opacity:0;text-align:center;font-weight:900;font-size:clamp(20px,6vw,37px);color:#fef08a;text-shadow:0 2px 8px #000,0 0 18px #f59e0b;white-space:nowrap;}
+    #arcade-pop.visible {animation:arcade-pop 850ms ease-out forwards;}
+    @keyframes arcade-pop {0%{opacity:0;transform:translate(-50%,-50%) scale(.55)}20%{opacity:1;transform:translate(-50%,-50%) scale(1.18)}75%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(.95)}}
+    #canvas-container.arcade-boom-shake {animation:arcade-boom-shake .72s cubic-bezier(.3,.05,.3,1) both;}
+    @keyframes arcade-boom-shake {0%,100%{transform:translate(0,0) rotate(0)}10%{transform:translate(-9px,4px) rotate(-.8deg)}20%{transform:translate(9px,-6px) rotate(.8deg)}32%{transform:translate(-7px,5px) rotate(-.6deg)}46%{transform:translate(6px,-3px) rotate(.5deg)}62%{transform:translate(-4px,2px) rotate(-.3deg)}78%{transform:translate(2px,-1px) rotate(.1deg)}}
+
+
+    #speed-clock {font-variant-numeric:tabular-nums;}
+  
+/* Compact the header stack without changing board controls or reserved AdMob space. */
+body > header { padding-bottom: 0 !important; }
+body > section:has(.scoreboard-grid) { flex-shrink: 0; margin-top: 0 !important; margin-bottom: 0 !important; }
+body > main.bottom-safe-clearance { flex: 1 1 0%; min-height: 0; }
+/* Preserve the banner's existing dimensions and position below bottom controls. */
+/* Arcade layout polish: independent speed row and full-width color selectors */
+.arcade-speed-row{display:flex;justify-content:center;align-items:center;gap:8px;margin:2px auto 2px;padding:0 12px;min-height:32px}
+.arcade-speed-row #arcade-speed-mode{min-width:115px;min-height:30px;font-size:12px;border-radius:10px}
+.arcade-speed-row #speed-clock{min-width:62px;text-align:center;font-size:13px;min-height:30px;align-content:center}
+.arcade-colors-row{width:100%;max-width:510px;margin:2px auto 3px;padding:0 12px;display:flex;justify-content:center;align-items:center;gap:8px}
+.arcade-color-button{min-width:0;flex:1;max-width:235px;min-height:36px;display:flex;align-items:center;justify-content:center;gap:7px;border-radius:12px;padding:7px 8px;background:rgba(39,52,86,.85);border:1px solid rgba(96,165,250,.52);color:#f8fafc;font-size:clamp(10px,2.9vw,12px);font-weight:750;white-space:nowrap;box-shadow:0 2px 12px rgba(15,23,42,.25)}
+.arcade-color-button:active{transform:scale(.98)}
+.arcade-bg-button{border-color:rgba(167,139,250,.58);background:rgba(45,37,75,.8)}
+.arcade-pair-dots{display:inline-flex;align-items:center;flex-shrink:0;padding-left:2px}
+.arcade-pair-dots span{display:inline-block;width:13px;height:13px;border-radius:50%;border:1px solid rgba(8,13,26,.95);box-shadow:0 0 0 1px rgba(255,255,255,.14)}
+.arcade-pair-dots span+span{margin-left:-4px}
+@media(max-width:360px){.arcade-colors-row{gap:5px;padding:0 7px}.arcade-color-button{gap:5px;padding:6px 4px;font-size:10px}}
+
+
+/* Ultra-compact upper controls: preserve button appearance, minimize background gutters. */
+body > header {padding-bottom:0 !important;}
+.arcade-speed-row {margin:0 auto !important;padding:0 8px !important;min-height:30px !important;gap:5px !important;}
+.arcade-speed-row #arcade-speed-mode {min-height:29px !important;}
+body > section:has(.scoreboard-grid) {margin:0 !important;padding-top:0 !important;padding-bottom:0 !important;}
+.scoreboard-grid {row-gap:0 !important;column-gap:6px !important;}
+/* Hide only the progress separator on mobile, but preserve its elements for game logic. */
+.scoreboard-grid > .col-span-12.order-last {display:none !important;}
+.arcade-colors-row {margin:0 auto 1px !important;padding:0 8px !important;gap:5px !important;}
+.arcade-color-button {min-height:34px !important;padding:6px 6px !important;}
+body > main.bottom-safe-clearance {padding-top:0 !important;}
+/* No changes to bottom controls or native ad banner reservation. */
+
+</style>
+<style>
+#result-celebration{position:relative;overflow:hidden;border-radius:18px;margin:0 auto 12px;padding:16px 8px;background:linear-gradient(120deg,#172554,#4c1d95);border:1px solid #a78bfa;isolation:isolate;}
+#result-celebration.win{background:radial-gradient(circle at 50% 65%,#8b5a06 0%,#422006 50%,#172554 100%);border-color:#fbbf24;box-shadow:0 0 26px #fbbf2460,inset 0 0 30px #fbbf2428;animation:result-glow 1.1s ease-in-out 3;}
+#result-celebration.loss{background:linear-gradient(130deg,#172554,#312e81);border-color:#93c5fd;}
+#result-celebration .result-face{position:relative;z-index:2;}
+#result-celebration .result-head{position:relative;z-index:2;}
+#result-celebration .result-face .result-3d-emoji{display:block;width:132px;max-width:65vw;height:auto;margin:auto;filter:drop-shadow(0 6px 10px #0008);object-fit:contain;}
+#result-celebration .result-face svg{display:block;width:74px;height:74px;margin:auto;filter:drop-shadow(0 4px 8px #0008);}
+#result-celebration.win .result-face{animation:result-bop .65s ease-in-out 5;}
+#result-celebration.loss .result-face{animation:result-wobble 1.3s ease-in-out 2;}
+#result-celebration.win::before{content:"";position:absolute;inset:-60%;background:repeating-conic-gradient(from 0deg,#fef08a24 0deg 9deg,transparent 9deg 24deg);animation:result-rays 6s linear infinite;z-index:0;pointer-events:none;}
+@keyframes result-glow{50%{box-shadow:0 0 42px #fbbf24a0,inset 0 0 40px #fbbf2440}}
+@keyframes result-rays{to{transform:rotate(360deg)}}
+@keyframes result-wobble{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg)}40%{transform:rotate(9deg)}65%{transform:rotate(-6deg)}}
+#result-celebration .result-face{font-size:42px;line-height:1.2;display:inline-block;animation:result-bop .65s ease-in-out 3;}
+#result-celebration .result-head{font-weight:900;font-size:18px;color:#fef08a;}
+#result-celebration.loss .result-head{color:#bfdbfe;}
+#result-celebration.draw .result-head{color:#e9d5ff;}
+#result-confetti{pointer-events:none;position:absolute;inset:0;overflow:hidden;z-index:3;}
+#result-confetti i{position:absolute;top:-15px;width:7px;height:13px;opacity:.95;animation:result-fall 3.2s linear forwards;transform:rotate(var(--spin,0deg));}
+@keyframes result-fall{to{transform:translateY(300px) translateX(var(--drift,0px)) rotate(820deg);opacity:0}}
+@keyframes result-bop{0%,100%{transform:scale(1)}45%{transform:scale(1.24) rotate(-9deg)}}
+@media(prefers-reduced-motion:reduce){#result-confetti i,#result-celebration .result-face{animation:none!important}}
+</style>
 </head>
-<body class="h-[100dvh] min-h-screen max-h-[100dvh] overflow-hidden flex flex-col justify-between">
+<body class="h-[100dvh] min-h-screen max-h-[100dvh] overflow-hidden flex flex-col justify-start">
 
 <!-- iPhone File-Previewer Notice (Shown only if opened in Apple Files/Messages preview instead of Safari) -->
 <div id="ios-preview-warning" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 px-4 py-2.5 text-xs font-bold text-center shadow-lg z-50 flex items-center justify-center gap-2">
@@ -367,6 +434,7 @@
         <span id="online-status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
         <span id="online-btn-label" class="whitespace-nowrap">Play Online</span>
       </button>
+
 
       <!-- Hint Button -->
       <button id="btn-hint" type="button" class="btn-control px-2 sm:px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 border border-amber-400/60 text-[10px] sm:text-xs font-bold text-amber-300 flex items-center justify-center gap-1 shadow-sm whitespace-nowrap shrink-0" title="Hint (Watch a Video Ad · 1x per player)">
@@ -522,6 +590,12 @@
   </div>
 </header>
 
+<!-- Dedicated speed challenge row: below Play Online / Hint and above player scores -->
+<div class="arcade-speed-row" role="group" aria-label="Turn timer controls">
+      <button id="arcade-speed-mode" type="button" class="btn-control px-2 py-1 rounded-lg bg-slate-800/90 border border-amber-400/50 text-[10px] sm:text-xs font-bold text-amber-200 whitespace-nowrap" title="Normal or 5-second turns">⏱ Normal</button>
+      <span id="speed-clock" class="hidden px-2 py-1 rounded-lg bg-rose-950 border border-rose-500 text-xs font-black text-white">5.0s</span>
+</div>
+
 <!-- Compact Scoreboard & Active Turn HUD -->
 <section class="w-full px-2.5 sm:px-6 z-10">
   <div class="max-w-6xl mx-auto grid grid-cols-12 gap-1.5 sm:gap-2 items-center scoreboard-grid h-full">
@@ -551,21 +625,11 @@
         <span id="turn-dot" class="w-1.5 h-1.5 rounded-full" style="background-color: #38bdf8;"></span>
         <span id="turn-text">Player 1's Turn — Connect 2 Dots</span>
       </div>
-      <div class="w-full max-w-[200px] bg-slate-800/90 h-1 rounded-full overflow-hidden border border-slate-700/60 flex">
+      <div class="hidden">
         <div id="bar-p1" class="h-full transition-all duration-300" style="width: 0%; background-color: #38bdf8;"></div>
         <div id="bar-p2" class="h-full transition-all duration-300 ml-auto" style="width: 0%; background-color: #fb923c;"></div>
       </div>
-      <div class="flex items-center justify-between gap-1.5 w-full max-w-[270px] text-[9px] sm:text-[10px] text-slate-400 mt-0.5 px-0.5">
-        <span id="remaining-boxes" class="truncate">9 Boxes Left</span>
-        <button id="btn-colors" type="button" class="btn-control px-3 py-1.5 rounded-xl bg-indigo-500/25 hover:bg-indigo-500/35 border-2 border-sky-400/70 text-[11px] sm:text-xs font-bold text-white flex items-center gap-2 shadow-md shadow-sky-500/15 shrink-0" title="Choose Player Line Colors (10 Colors)">
-            <span class="flex items-center -space-x-1">
-              <span id="header-p1-dot" class="w-3 h-3 rounded-full border border-slate-950" style="background-color: #38bdf8;"></span>
-              <span id="header-p2-dot" class="w-3 h-3 rounded-full border border-slate-950" style="background-color: #fb923c;"></span>
-            </span>
-          <span id="lbl-colors">Players Colors</span>
-        </button>
-        <span id="total-dots-info" class="truncate">16 Dots</span>
-      </div>
+
     </div>
 
     <!-- Player 2 (O) Card -->
@@ -590,10 +654,23 @@
   </div>
 </section>
 
+<div class="arcade-colors-row">
+  <button id="btn-colors" type="button" class="arcade-color-button" title="Choose Player Line Colors (10 Colors)">
+    <span class="arcade-pair-dots" aria-hidden="true"><span id="header-p1-dot" style="background-color:#38bdf8"></span><span id="header-p2-dot" style="background-color:#fb923c"></span></span>
+    <span id="lbl-colors">Players Colors</span>
+  </button>
+  <button id="arcade-theme-btn" type="button" class="arcade-color-button arcade-bg-button" title="Change main page background">
+    <span class="arcade-pair-dots" aria-hidden="true"><span id="arcade-bg-dot-one" style="background-color:#38205b"></span><span id="arcade-bg-dot-two" style="background-color:#13505b"></span></span>
+    <span>Background Color</span>
+  </button>
+</div>
+<span id="remaining-boxes" hidden></span><span id="total-dots-info" hidden></span>
+
 <!-- Main 3D Game Arena + Single Compact Bottom Control Box (With 1-Fingertip Bottom Clearance) -->
 <main class="flex-1 min-h-0 w-full max-w-6xl mx-auto px-2 sm:px-6 pt-0.5 bottom-safe-clearance flex flex-col justify-between relative overflow-hidden">
   <div id="canvas-container" class="flex-1 min-h-0 rounded-2xl sm:rounded-3xl overflow-hidden glass-panel shadow-2xl relative border border-slate-800/90">
     <canvas id="game-canvas"></canvas>
+    <div id="arcade-pop" aria-live="polite"></div>
 
     <!-- Absolute floating tip/online status overlay (Zero impact on canvas height or layout) -->
     <div id="top-board-tip-row" class="absolute top-2 left-0 right-0 flex items-center justify-center gap-2 pointer-events-none z-20">
@@ -684,30 +761,7 @@
 </main>
 
 
-<style>
-#result-celebration{position:relative;overflow:hidden;border-radius:18px;margin:0 auto 12px;padding:16px 8px;background:linear-gradient(120deg,#172554,#4c1d95);border:1px solid #a78bfa;isolation:isolate;}
-#result-celebration.win{background:radial-gradient(circle at 50% 65%,#8b5a06 0%,#422006 50%,#172554 100%);border-color:#fbbf24;box-shadow:0 0 26px #fbbf2460,inset 0 0 30px #fbbf2428;animation:result-glow 1.1s ease-in-out 3;}
-#result-celebration.loss{background:linear-gradient(130deg,#172554,#312e81);border-color:#93c5fd;}
-#result-celebration .result-face{position:relative;z-index:2;}
-#result-celebration .result-head{position:relative;z-index:2;}
-#result-celebration .result-face .result-3d-emoji{display:block;width:132px;max-width:65vw;height:auto;margin:auto;filter:drop-shadow(0 6px 10px #0008);object-fit:contain;}
-#result-celebration .result-face svg{display:block;width:74px;height:74px;margin:auto;filter:drop-shadow(0 4px 8px #0008);}
-#result-celebration.win .result-face{animation:result-bop .65s ease-in-out 5;}
-#result-celebration.loss .result-face{animation:result-wobble 1.3s ease-in-out 2;}
-#result-celebration.win::before{content:"";position:absolute;inset:-60%;background:repeating-conic-gradient(from 0deg,#fef08a24 0deg 9deg,transparent 9deg 24deg);animation:result-rays 6s linear infinite;z-index:0;pointer-events:none;}
-@keyframes result-glow{50%{box-shadow:0 0 42px #fbbf24a0,inset 0 0 40px #fbbf2440}}
-@keyframes result-rays{to{transform:rotate(360deg)}}
-@keyframes result-wobble{0%,100%{transform:rotate(0)}20%{transform:rotate(-12deg)}40%{transform:rotate(9deg)}65%{transform:rotate(-6deg)}}
-#result-celebration .result-face{font-size:42px;line-height:1.2;display:inline-block;animation:result-bop .65s ease-in-out 3;}
-#result-celebration .result-head{font-weight:900;font-size:18px;color:#fef08a;}
-#result-celebration.loss .result-head{color:#bfdbfe;}
-#result-celebration.draw .result-head{color:#e9d5ff;}
-#result-confetti{pointer-events:none;position:absolute;inset:0;overflow:hidden;z-index:3;}
-#result-confetti i{position:absolute;top:-15px;width:7px;height:13px;opacity:.95;animation:result-fall 3.2s linear forwards;transform:rotate(var(--spin,0deg));}
-@keyframes result-fall{to{transform:translateY(300px) translateX(var(--drift,0px)) rotate(820deg);opacity:0}}
-@keyframes result-bop{0%,100%{transform:scale(1)}45%{transform:scale(1.24) rotate(-9deg)}}
-@media(prefers-reduced-motion:reduce){#result-confetti i,#result-celebration .result-face{animation:none!important}}
-</style>
+
 
 <!-- Victory Modal Overlay -->
 <div id="victory-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-3 sm:p-4">
@@ -1649,6 +1703,12 @@
     gridSize: 5, // 5x5 = 25 dots (16 boxes) by default
     boardScale: 1.10, // Default 110% size // Adjustable from 0.60 (60%) to 1.45 (145%)
     vsAI: false,
+    speedChallenge: false,
+    speedDeadline: 0,
+    speedHintPaused: false,
+    speedTurnSerial: 0,
+    comboPlayer: 0,
+    comboCount: 0,
     aiDifficulty: 'medium', // 'easy' | 'medium' | 'hard'
     p1ColorIdx: 0,
     p2ColorIdx: 1,
@@ -1867,25 +1927,8 @@
     camSpherical.targetRadius = idealR;
     camSpherical.radius = idealR;
 
-    // 1. Solid Unlit Matte Dark 3D Tabletop Base (zero light reflection or central glare)
-    const pad = 0.85;
-    const baseWidth = boardSpan + pad * 2;
-    const baseGeo = new THREE.BoxGeometry(baseWidth, 0.38, baseWidth);
-    const baseMat = new THREE.MeshBasicMaterial({
-      color: 0x070b14
-    });
-    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-    baseMesh.position.y = -0.19; // Top surface is flush at y = 0.0
-    boardGroup.add(baseMesh);
-
-    // Outer Frame (Unlit matte border so no light bleeds underneath)
-    const rimGeo = new THREE.BoxGeometry(baseWidth + 0.22, 0.36, baseWidth + 0.22);
-    const rimMat = new THREE.MeshBasicMaterial({
-      color: 0x111a2b
-    });
-    const rimMesh = new THREE.Mesh(rimGeo, rimMat);
-    rimMesh.position.y = -0.22;
-    boardGroup.add(rimMesh);
+    // No square tabletop or outer rim: the 3D dots and lines float freely
+    // over the existing canvas backdrop. Keep all playable edges intact.
 
     // Initialize box coordinates (without raised floor tiles that caused lit gaps)
     for (let r = 0; r < N - 1; r++) {
@@ -2190,6 +2233,10 @@
       p1Name: (state.p1CustomName || '').trim() || 'Player 1',
       p2Name: (state.p2CustomName || '').trim() || 'Player 2',
       currentPlayer: state.currentPlayer,
+      speedChallenge: state.speedChallenge,
+      arcadeThemeIndex: arcadeThemeIndex,
+      speedDeadline: state.speedDeadline,
+      speedTurnSerial: state.speedTurnSerial,
       scores: { ...state.scores },
       hLines: state.hLines.map(r => [...r]),
       vLines: state.vLines.map(r => [...r]),
@@ -2248,6 +2295,11 @@
     state.boxes = fullState.boxes.map(r => [...r]);
     state.scores = { 1: Math.max(0, fullState.scores[1]), 2: Math.max(0, fullState.scores[2]) };
     state.currentPlayer = fullState.currentPlayer;
+    state.speedChallenge = Boolean(fullState.speedChallenge);
+    if(Number.isInteger(fullState.arcadeThemeIndex))arcadeApplyTheme(fullState.arcadeThemeIndex);
+    state.speedDeadline = Number.isFinite(fullState.speedDeadline) ? fullState.speedDeadline : 0;
+    state.speedTurnSerial = Number.isInteger(fullState.speedTurnSerial) ? fullState.speedTurnSerial : 0;
+    arcadeUpdateSpeedButton();
     state.lastEdge = fullState.lastEdge ? { ...fullState.lastEdge } : null;
     state.gameOver = Boolean(fullState.gameOver);
     state.online.moveNumber = (typeof fullState.moveNumber === 'number' && Number.isInteger(fullState.moveNumber)) ? Math.max(0, fullState.moveNumber) : 0;
@@ -2297,6 +2349,8 @@
     if (state.online.conn && state.online.conn.open) {
       state.online.conn.send({
         type: 'rematch-start',
+        speedChallenge: state.speedChallenge,
+        arcadeThemeIndex: arcadeThemeIndex,
         sessionToken: state.online.sessionToken,
         matchId: state.online.matchId,
         gridSize: state.gridSize,
@@ -2305,6 +2359,7 @@
         p1Name: (state.p1CustomName || '').trim() || 'Player 1',
         p2Name: (state.p2CustomName || '').trim() || 'Player 2'
       });
+      setTimeout(arcadeSendClock,200);
     }
 
     const toast = document.getElementById('selection-toast');
@@ -2318,6 +2373,184 @@
   // =========================================================================
   // GAME LOGIC & STATE MANAGEMENT
   // =========================================================================
+  // Arcade test features. Host is the only authority for online timeouts.
+  const arcadeThemes = [
+    ['Midnight Navy','#090d16','#1e293b'],['Royal Purple','#120b2a','#38205b'],
+    ['Deep Teal','#061e24','#13505b'],['Burgundy','#210d1c','#562039'],
+    ['Forest','#081c17','#23523c'],['Slate Blue','#101b30','#34476d'],
+    ['Warm Charcoal','#171316','#423038'],
+    ['Peach Sorbet','#ffe0cf','#ffad93'],['Sky Blue','#d9f1ff','#88cfff'],
+    ['Mint Breeze','#ddfff1','#8fe9c3'],['Lavender Dream','#eee3ff','#c4a6fa'],
+    ['Sunny Lemon','#fff8c9','#ffe17e'],['Rose Pink','#ffe2ed','#ffaccd']
+  ];
+  // Keep original theme IDs for saved preferences and online compatibility.
+  // Burgundy (3), Forest (4), Warm Charcoal (6), and Sunny Lemon (11) are excluded from selection.
+  const arcadeAvailableThemeIndices = [0,1,2,5,7,8,9,10,12];
+  let arcadeThemeIndex = 0, arcadePopupTimer = null, arcadeFinalTimer = null;
+  function arcadeApplyTheme(index) {
+    arcadeThemeIndex = arcadeAvailableThemeIndices.includes(index) ? index : 0;
+    const theme = arcadeThemes[arcadeThemeIndex];
+    document.documentElement.style.setProperty('--arcade-theme-base',theme[1]);
+    document.documentElement.style.setProperty('--arcade-theme-accent',theme[2]);
+    document.documentElement.style.backgroundColor=theme[1];
+    document.body.style.background = theme[1];
+    // Tint the full page, including the area surrounding and behind the 3D board.
+    // The board's lines and controls stay dark enough to remain readable.
+    const arena=document.getElementById('canvas-container');
+    if(arena) arena.style.background=theme[1];
+    const controls=document.getElementById('bottom-controls-square');
+    if(controls) controls.style.background=theme[1];
+    const btn = document.getElementById('arcade-theme-btn');
+    if (btn) btn.title = 'Background: ' + theme[0] + ' (tap for next)';
+    const dot1=document.getElementById('arcade-bg-dot-one');
+    const dot2=document.getElementById('arcade-bg-dot-two');
+    if(dot1)dot1.style.backgroundColor=theme[2];
+    if(dot2)dot2.style.backgroundColor=arcadeThemes[arcadeAvailableThemeIndices[(arcadeAvailableThemeIndices.indexOf(arcadeThemeIndex)+1)%arcadeAvailableThemeIndices.length]][2];
+    try { localStorage.setItem('dots3d_bg_theme',String(arcadeThemeIndex)); } catch(e){}
+  }
+  document.getElementById('arcade-theme-btn').addEventListener('click',()=>{
+    if(state.online.active && state.online.role !== 1)return;
+    arcadeApplyTheme(arcadeAvailableThemeIndices[(arcadeAvailableThemeIndices.indexOf(arcadeThemeIndex)+1)%arcadeAvailableThemeIndices.length]);
+    if(state.online.active && state.online.role===1 && state.online.conn?.open){
+      state.online.conn.send({type:'arcade-theme',sessionToken:state.online.sessionToken,matchId:state.online.matchId,index:arcadeThemeIndex});
+    }
+  });
+  // First launch: Midnight Navy (index 0). Subsequent launches: user's saved choice.
+  // Local storage persists in the installed Android WebView while app data is retained.
+  let initialArcadeTheme = 0;
+  try {
+    const storedTheme = localStorage.getItem('dots3d_bg_theme');
+    if (storedTheme !== null && /^\d+$/.test(storedTheme)) {
+      const storedIndex = Number(storedTheme);
+      if (arcadeAvailableThemeIndices.includes(storedIndex)) initialArcadeTheme = storedIndex;
+    }
+  } catch (e) {}
+  arcadeApplyTheme(initialArcadeTheme);
+
+  function arcadeUpdateSpeedButton() {
+    const b = document.getElementById('arcade-speed-mode');
+    if (!b) return;
+    b.textContent = state.speedChallenge ? '⚡ Speed 5s' : '⏱ Normal';
+    b.classList.toggle('bg-amber-500',state.speedChallenge);
+    b.classList.toggle('text-slate-950',state.speedChallenge);
+    b.disabled = state.online.active && state.online.role === 2;
+    const themeButton=document.getElementById('arcade-theme-btn');
+    if(themeButton)themeButton.disabled=state.online.active && state.online.role===2;
+    document.getElementById('speed-clock')?.classList.toggle('hidden',!state.speedChallenge);
+  }
+  function arcadeSetDeadline() {
+    state.speedTurnSerial++;
+    state.speedDeadline = state.speedChallenge && !state.gameOver ? Date.now()+5000 : 0;
+    state.speedHintPaused = false;
+  }
+  function arcadeSendClock() {
+    if (state.online.active && state.online.conn?.open && state.online.role === 1) {
+      state.online.conn.send({type:'arcade-clock',sessionToken:state.online.sessionToken,matchId:state.online.matchId,
+        player:state.currentPlayer,serial:state.speedTurnSerial,remainingMs:Math.max(0,state.speedDeadline-Date.now()),
+        enabled:state.speedChallenge});
+    }
+  }
+  document.getElementById('arcade-speed-mode').addEventListener('click',()=>{
+    if (state.online.active && state.online.role !== 1) return;
+    state.speedChallenge = !state.speedChallenge;
+    SoundFX.dotSelect();
+    // Changing Normal/Speed is a new match, not a mid-game timer change.
+    if (state.online.active && state.online.role === 1) {
+      state.online.matchId = 'm_' + Date.now() + '_' + generateCryptographicToken(4);
+      state.online.moveNumber = 0;
+      state.online.rematchRequestedBy = null;
+      if (state.online.rematchExpiryTimer) {
+        clearTimeout(state.online.rematchExpiryTimer);
+        state.online.rematchExpiryTimer = null;
+      }
+      initGame(state.gridSize);
+      if (state.online.conn?.open) {
+        state.online.conn.send({
+          type: 'restart-match',
+          speedChallenge: state.speedChallenge,
+          arcadeThemeIndex: arcadeThemeIndex,
+          sessionToken: state.online.sessionToken,
+          matchId: state.online.matchId,
+          gridSize: state.gridSize,
+          p1ColorIdx: state.p1ColorIdx,
+          p2ColorIdx: state.p2ColorIdx,
+          p1Name: (state.p1CustomName || '').trim() || 'Player 1',
+          p2Name: (state.p2CustomName || '').trim() || 'Player 2'
+        });
+        setTimeout(arcadeSendClock, 200);
+      }
+    } else {
+      initGame(state.gridSize);
+    }
+  });
+  function arcadePopup(text,color) {
+    const el=document.getElementById('arcade-pop'); if(!el)return;
+    clearTimeout(arcadePopupTimer);el.classList.remove('visible');void el.offsetWidth;
+    el.textContent=text;el.style.color=color;el.classList.add('visible');
+    arcadePopupTimer=setTimeout(()=>el.classList.remove('visible'),900);
+  }
+  function arcadeTone(freq=500, duration=.13, vol=.09) {
+    if(SoundFX.muted)return;
+    SoundFX.playTone(freq,'triangle',duration,vol,0);
+  }
+  // Embedded user-provided female BOOM voice plays offline at the final line.
+  const arcadeExplosionAudio = new Audio('female_boom.mp3');
+  arcadeExplosionAudio.preload = 'auto';
+  function arcadeBoomSound() {
+    if (SoundFX.muted) return;
+    try {
+      arcadeExplosionAudio.pause();
+      arcadeExplosionAudio.currentTime = 0;
+      arcadeExplosionAudio.volume = 1;
+      const playback = arcadeExplosionAudio.play();
+      if (playback && playback.catch) playback.catch(() => {});
+    } catch (e) {}
+  }
+  function arcadeFinish(finalLinePlayer) {
+    const board=document.getElementById('canvas-container');
+    clearTimeout(arcadeFinalTimer);
+    // Celebrate the final move only when its owner wins outright (never for a loss or draw).
+    const finalLineWins = (finalLinePlayer === 1 || finalLinePlayer === 2) &&
+      state.scores[finalLinePlayer] > state.scores[finalLinePlayer === 1 ? 2 : 1];
+    board?.classList.remove('arcade-boom-shake');
+    if (finalLineWins) {
+      if(board){void board.offsetWidth;board.classList.add('arcade-boom-shake');}
+      arcadeBoomSound();
+    }
+    // Preserve the existing four-second lead-in to the normal result celebration.
+    arcadeFinalTimer=setTimeout(()=>{board?.classList.remove('arcade-boom-shake');if(state.gameOver)showVictoryModal();},4000);
+  }
+  function arcadeTick() {
+    if (!state.speedChallenge || state.gameOver || !state.speedDeadline) return;
+    if (state.speedHintPaused) {
+      const pausedClock=document.getElementById('speed-clock');
+      if (pausedClock) {pausedClock.textContent='⏸ PAUSED';pausedClock.style.color='#fde68a';}
+      return;
+    }
+    const left=state.speedDeadline-Date.now();
+    const label=document.getElementById('speed-clock');
+    if(label) {label.textContent=(Math.max(0,left)/1000).toFixed(1)+'s';label.style.color=left<1600?'#fca5a5':'white';}
+    if(left>0 || document.hidden || (state.online.active && (state.online.role!==1 || state.online.isReconnecting || !state.online.conn?.open)))return;
+    // Skip only the active turn, never claim a line or award a box.
+    const old=state.currentPlayer;
+    state.currentPlayer=old===1?2:1;
+    state.selectedDot=null;state.hintEdge=null;state.aiThinking=false;
+    state.comboCount=0;state.comboPlayer=0;
+    arcadeSetDeadline();
+    arcadePopup('⏱ TIME UP!','#fb7185');arcadeTone(240,.14,.10);
+    updateVisuals();updateHUD();
+    if(state.online.active) {
+      state.online.moveNumber++;
+      state.online.conn.send({type:'arcade-timeout',sessionToken:state.online.sessionToken,matchId:state.online.matchId,
+        moveNumber:state.online.moveNumber,player:old,serial:state.speedTurnSerial});
+    }
+    if(state.vsAI && state.currentPlayer===2) {
+      state.aiThinking=true;setTimeout(makeAIMove,180);
+    }
+  }
+  setInterval(arcadeTick,100);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden && state.speedChallenge && !state.online.active && !state.gameOver) arcadeSetDeadline();});
+
   function initGame(newGridSize = state.gridSize) {
     // A new match must never leave the post-match inspection button visible.
     document.getElementById('btn-return-match-results')?.classList.add('hidden');
@@ -2331,6 +2564,9 @@
     state.lastEdge = null;
     state.history = [];
     state.gameOver = false;
+    state.comboCount=0;state.comboPlayer=0;
+    clearTimeout(arcadeFinalTimer);document.getElementById('canvas-container')?.classList.remove('arcade-boom-shake');
+    arcadeSetDeadline();arcadeUpdateSpeedButton();
     state.lbMatchRecorded = false;
     state.aiThinking = false;
     state.aiGameRecorded = false;
@@ -2445,10 +2681,19 @@
     const captured = checkCompletedBoxes(type, r, c, player);
 
     if (captured.length > 0) {
+      state.comboCount = state.comboPlayer === player ? state.comboCount+captured.length : captured.length;
+      state.comboPlayer = player;
+      if (state.comboCount >= 3) {
+        arcadePopup(state.comboCount===3?'🔥 TRIPLE COMBO!':state.comboCount===4?'⚡ MEGA COMBO!':`💥 ${state.comboCount}x COMBO!`,
+          player===1?COLOR_PALETTE[state.p1ColorIdx].css:COLOR_PALETTE[state.p2ColorIdx].css);
+        arcadeTone(620+Math.min(6,state.comboCount)*85,.18,.12);
+      }
+      if (captured.length >= 2) {if(state.comboCount < 3)arcadePopup('⚡ POWER MOVE!','#fef08a');arcadeTone(960,.12,.11);}
       state.scores[player] += captured.length;
       captured.forEach(b => create3DBoxToken(b.r, b.c, player));
       SoundFX.boxCapture(player, captured.length);
     } else {
+      state.comboCount=0;state.comboPlayer=0;
       SoundFX.linePlace(player);
       state.currentPlayer = player === 1 ? 2 : 1;
     }
@@ -2470,6 +2715,8 @@
       }
     }
 
+    arcadeSetDeadline();
+    if (state.online.active && state.online.role===1 && state.speedChallenge) arcadeSendClock();
     updateVisuals();
     updateHUD();
 
@@ -2477,7 +2724,8 @@
     const totalBoxes = (state.gridSize - 1) * (state.gridSize - 1);
     if (state.scores[1] + state.scores[2] >= totalBoxes) {
       state.gameOver = true;
-      setTimeout(showVictoryModal, 650);
+      state.speedDeadline=0;
+      arcadeFinish(player); // Only the winning final-line player triggers BOOM and shake.
       return true;
     }
 
@@ -2958,11 +3206,11 @@
         }
         const desc = document.getElementById('ad-sponsor-desc');
         if (desc) {
-          desc.innerHTML = 'Google AdMob rewarded ads are active in the <strong>Android APK</strong>. Install the Android Studio build on your phone to watch real test/live ads, or subscribe to the Ad-Free Pass.';
+          desc.innerHTML = 'Google AdMob rewarded ads only run inside the <strong>Android APK</strong>. For this browser test, you can preview the red flashing hint without watching an ad. The APK still requires a verified rewarded ad.';
         }
         if (actionBtn) {
           actionBtn.disabled = false;
-          actionBtn.textContent = 'Close';
+          actionBtn.textContent = rewardType === 'hint' ? 'Preview Hint (Browser Test)' : 'Close';
           actionBtn.className = 'w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm cursor-pointer';
         }
       }
@@ -3084,6 +3332,7 @@
           actionBtn.className = 'w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm cursor-pointer';
         }
         this.pendingTx = null;
+        if (state.speedHintPaused) arcadeSetDeadline();
       }
     },
 
@@ -3108,6 +3357,7 @@
           actionBtn.className = 'w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-extrabold text-xs sm:text-sm cursor-pointer shadow-lg';
         }
         this.pendingTx = null;
+        if (state.speedHintPaused) arcadeSetDeadline();
       }
     }
   };
@@ -3137,6 +3387,13 @@
       if (tipRow) tipRow.classList.remove('hidden');
       return;
     }
+    // Freeze the 5-second clock while the player uses a hint.
+    // The next successfully drawn line starts a fresh 5-second turn.
+    if (state.speedChallenge) {
+      state.speedHintPaused = true;
+      const clock=document.getElementById('speed-clock');
+      if (clock) {clock.textContent='⏸ PAUSED';clock.style.color='#fde68a';}
+    }
     AdMobBridge.startAdFlow('hint');
   }
 
@@ -3146,6 +3403,8 @@
     state.hintsUsed[curP] = true;
     const best = chooseBestMove('hard');
     if (best) {
+      state.selectedDot = null;
+      state.hoveredEdge = null;
       state.hintEdge = best;
       SoundFX.hint();
       updateVisuals();
@@ -3211,7 +3470,7 @@
         edgeObj.beamMesh.material.emissiveIntensity = isLast ? 0.95 : 0.45;
         edgeObj.beamMesh.material.opacity = 1;
         edgeObj.grooveMesh.material.opacity = 0.2;
-      } else if (isHovered && !state.aiThinking && !state.gameOver) {
+      } else if (isHovered && !isHint && !state.aiThinking && !state.gameOver) {
         edgeObj.beamMesh.visible = true;
         edgeObj.beamMesh.scale.set(1, 0.85, 1);
         edgeObj.beamMesh.material.color.setHex(activeColor);
@@ -3373,9 +3632,9 @@
     document.documentElement.style.setProperty('--p2-color', c2.css);
     document.documentElement.style.setProperty('--p2-rgb', c2.rgb);
 
-    // Keep the Players Colors button icon blue/orange regardless of match colors.
-    document.getElementById('header-p1-dot').style.backgroundColor = '#38bdf8';
-    document.getElementById('header-p2-dot').style.backgroundColor = '#fb923c';
+    // Reflect each player's currently selected line color in the header icon.
+    document.getElementById('header-p1-dot').style.backgroundColor = c1.css;
+    document.getElementById('header-p2-dot').style.backgroundColor = c2.css;
 
     const p1Badge = document.getElementById('btn-p1-badge');
     p1Badge.style.backgroundColor = `rgba(${c1.rgb}, 0.18)`;
@@ -3509,10 +3768,27 @@
 
   // Audio files are shipped alongside index.html inside Android assets.
   const matchResultAudio = {
-    winner: new Audio('winner.wav'),
-    loser: new Audio('loser.wav')
+    winner: new Audio('winner_3d.wav'),
+    loser: new Audio('loser_3d.wav')
   };
   Object.values(matchResultAudio).forEach(audio => { audio.preload = 'auto'; audio.volume = 0.85; });
+  // Browsers often block WAV playback after a delayed finale unless media was unlocked by a tap.
+  let arcadeAudioUnlocked = false;
+  function arcadeUnlockResultAudio() {
+    if (arcadeAudioUnlocked) return;
+    arcadeAudioUnlocked = true;
+    for (const audio of Object.values(matchResultAudio)) {
+      try {
+        audio.muted = true;
+        const started = audio.play();
+        if (started && typeof started.then === 'function') {
+          started.then(()=>{audio.pause();audio.currentTime=0;audio.muted=false;}).catch(()=>{audio.muted=false;});
+        } else {audio.pause();audio.currentTime=0;audio.muted=false;}
+      } catch(e) {audio.muted=false;}
+    }
+  }
+  document.addEventListener('pointerdown',arcadeUnlockResultAudio,{once:true,capture:true});
+  document.addEventListener('keydown',arcadeUnlockResultAudio,{once:true,capture:true});
   function playMatchResultAudio(kind) {
     Object.values(matchResultAudio).forEach(audio => { audio.pause(); audio.currentTime = 0; });
     if (SoundFX.muted) return;
@@ -3520,7 +3796,7 @@
     if (!audio) return;
     audio.currentTime = 0;
     const promise = audio.play();
-    if (promise && typeof promise.catch === 'function') promise.catch(err => console.warn('Match result sound unavailable', err));
+    if (promise && typeof promise.catch === 'function') promise.catch(err => {console.warn('Match result WAV unavailable; playing fallback sound',err); try{if(kind==='winner')SoundFX.winJingle?.();else SoundFX.loseJingle?.();}catch(e){} });
   }
 
   function showVictoryModal() {
@@ -4284,6 +4560,7 @@
   document.getElementById('btn-hint').addEventListener('click', triggerHint);
   document.getElementById('btn-ad-close').addEventListener('click', () => {
     AdMobBridge.closeModal();
+    if (state.speedHintPaused) arcadeSetDeadline();
     const msgEl = document.getElementById('selection-msg');
     if (msgEl) msgEl.textContent = 'Ad cancelled — watch full Google AdMob ad to earn reward.';
     const tipRow = document.getElementById('top-board-tip-row');
@@ -4291,8 +4568,15 @@
   });
   document.getElementById('btn-ad-action').addEventListener('click', () => {
     const actionBtn = document.getElementById('btn-ad-action');
-    if (actionBtn && actionBtn.textContent.trim() === 'Close') {
+    if (actionBtn && actionBtn.textContent.trim() === 'Preview Hint (Browser Test)' &&
+        !AdMobBridge.isNativeAvailable() && AdMobBridge.currentRewardType === 'hint') {
+      // Browser-only test path; never bypass native AdMob reward verification in the APK.
+      AdMobBridge.pendingTx = null;
       AdMobBridge.closeModal();
+      applyVerifiedHintReward('💡 Browser preview: best move flashing red. APK requires a completed rewarded ad.');
+    } else if (actionBtn && actionBtn.textContent.trim() === 'Close') {
+      AdMobBridge.closeModal();
+      if (state.speedHintPaused) arcadeSetDeadline();
     } else {
       AdMobBridge.executeAdRequest();
     }
@@ -4345,6 +4629,8 @@
       if (state.online.conn && state.online.conn.open) {
         state.online.conn.send({
           type: 'restart-match',
+          speedChallenge: state.speedChallenge,
+          arcadeThemeIndex: arcadeThemeIndex,
           sessionToken: state.online.sessionToken,
           matchId: state.online.matchId,
           gridSize: state.gridSize,
@@ -4353,6 +4639,7 @@
           p1Name: (state.p1CustomName || '').trim() || 'Player 1',
           p2Name: (state.p2CustomName || '').trim() || 'Player 2'
         });
+        setTimeout(arcadeSendClock,200);
       }
       return;
     }
@@ -5524,6 +5811,31 @@
           }
         }
 
+        if (data.type === 'arcade-theme' && role===2 && data.matchId===state.online.matchId) {
+          if(Number.isInteger(data.index) && arcadeAvailableThemeIndices.includes(data.index))arcadeApplyTheme(data.index);
+          return;
+        }
+        if (data.type === 'arcade-clock' && role===2 && data.matchId===state.online.matchId) {
+          if (Number.isInteger(data.serial) && data.serial >= state.speedTurnSerial) {
+            state.speedChallenge=Boolean(data.enabled);
+            state.speedTurnSerial=data.serial;
+            state.speedDeadline=state.speedChallenge?Date.now()+Math.max(0,Math.min(5000,Number(data.remainingMs)||0)):0;
+            arcadeUpdateSpeedButton();
+          }
+          return;
+        }
+        if (data.type === 'arcade-timeout' && role===2 && data.matchId===state.online.matchId) {
+          if (!state.gameOver && data.moveNumber===state.online.moveNumber+1 && data.player===state.currentPlayer) {
+            state.currentPlayer=state.currentPlayer===1?2:1;
+            state.online.moveNumber=data.moveNumber;
+            state.comboCount=0;state.comboPlayer=0;state.selectedDot=null;state.hintEdge=null;
+            state.speedTurnSerial=Number(data.serial)||state.speedTurnSerial+1;
+            state.speedDeadline=Date.now()+5000;
+            arcadePopup('⏱ TIME UP!','#fb7185');arcadeTone(240,.14,.10);
+            updateVisuals();updateHUD();
+          } else if(conn.open)conn.send({type:'request-state-sync',sessionToken:state.online.sessionToken,reason:'speed-timeout-sync'});
+          return;
+        }
         // If connection was in reconnecting state, mark restored
         if (state.online.isReconnecting && data.type !== 'reconnect-ack') {
           state.online.isReconnecting = false;
@@ -5562,6 +5874,8 @@
             sessionToken: state.online.sessionToken,
             matchId: state.online.matchId,
             gridSize: state.gridSize,
+            speedChallenge: state.speedChallenge,
+            arcadeThemeIndex: arcadeThemeIndex,
             p1ColorIdx: state.p1ColorIdx,
             p2ColorIdx: state.p2ColorIdx,
             p1Name: (state.p1CustomName || '').trim() || 'Player 1'
@@ -5583,6 +5897,8 @@
           state.online.reconnectAttempts = 0;
           state.online.moveNumber = 0;
           state.vsAI = false;
+          state.speedChallenge = Boolean(data.speedChallenge);
+          if(Number.isInteger(data.arcadeThemeIndex))arcadeApplyTheme(data.arcadeThemeIndex);
           syncModeAndAIDiffUI();
 
           const validSizes = [4, 5, 6];
@@ -5658,6 +5974,7 @@
             state.p2CustomName = data.p2Name;
           }
           updateHUD();
+          arcadeSendClock();
 
           setOnlineBadgeState('connected', 'Connected (Host · P1)');
           onlineStatusText.textContent = `Connected live in Room ${roomCode}! Both players online.`;
@@ -5861,6 +6178,8 @@
 
           placeEdge(eType, r, c, true);
           state.online.moveNumber = data.moveNumber;
+          // placeEdge already broadcasts the speed clock when the host applies a move.
+          // Avoid a duplicate network message and timer update on every remote move.
 
           // Checksum state verification
           const localChecksum = getBoardStateChecksum();
@@ -5986,6 +6305,8 @@
           if (data.p1Name) state.p1CustomName = data.p1Name;
           if (data.p2Name) state.p2CustomName = data.p2Name;
           applyPlayerColors(false);
+          state.speedChallenge = Boolean(data.speedChallenge);
+          if(Number.isInteger(data.arcadeThemeIndex))arcadeApplyTheme(data.arcadeThemeIndex);
 
           const validSizes = [4, 5, 6];
           const gSize = validSizes.includes(data.gridSize) ? data.gridSize : state.gridSize;
@@ -6027,6 +6348,8 @@
           if (data.p1Name) state.p1CustomName = data.p1Name;
           if (data.p2Name) state.p2CustomName = data.p2Name;
           applyPlayerColors(false);
+          state.speedChallenge = Boolean(data.speedChallenge);
+          if(Number.isInteger(data.arcadeThemeIndex))arcadeApplyTheme(data.arcadeThemeIndex);
 
           const validSizes = [4, 5, 6];
           const gSize = validSizes.includes(data.gridSize) ? data.gridSize : state.gridSize;
@@ -6473,6 +6796,7 @@
     el: { dir: 'ltr', playFriend: 'Παίξε Online', undo: 'Αναίρεση', hint: 'Υπόδειξη', settings: 'Ρυθμίσεις', newGame: 'Νέο Παιχνίδι', settingsTitle: 'Ρυθμίσεις Παιχνιδιού', hidePanel: 'Κλείσιμο ✕', dots: 'Τελείες:', dotsUnit: 'Τελείες', boxSize: 'Μέγεθος:', mode: 'Λειτουργία:', twoPlayers: '2 Παίκτες', vsAI: 'εναντίον AI', aiLevel: 'Επίπεδο AI:', easy: 'Εύκολο', medium: 'Μεσαίο', hard: 'Δύσκολο', colors: 'Χρώματα', langLabel: 'Γλώσσα:', rulesBtn: 'Πώς Παίζεται, Κανόνες & Νίκη', tutorialBtn: 'Σύντομος Οδηγός', shareBtn: 'Κοινοποίηση σε Φίλο', rateBtn: 'Αξιολόγηση 5★ στο Google Play', feedbackBtn: 'Αποστολή Σχολίων (Email)', hintNote: 'Υπόδειξ', p1: 'Παίκτης 1', p2: 'Παίκτης 2', turn: 'Σειρά', boxes: 'Κουτιά', boxesLeft: 'Κουτιά Ακόμη', p1Turn: 'Σειρά Παίκτη 1 (X) — Σχεδίασε γραμμή', p2Turn: 'Σειρά Παίκτη 2 (O) — Σχεδίασε γραμμή', aiThinking: 'Το AI σκέφτεται...', tapGroove: 'Πατήστε ανάμεσα σε 2 τελείες', p1Wins: 'Ο Παίκτης 1 (X) Κερδίζει!', p2Wins: 'Ο Παίκτης 2 (O) Κερδίζει!', draw: 'Ισοπαλία!', playAgain: 'Παίξε Ξανά', inspectBoard: 'Προβολή 3D Ταμπλό' }
   };
 
+  // English by default on first launch; retain the user's language on later launches.
   state.lang = 'en';
   try {
     const savedLang = localStorage.getItem('dots3d_lang');
@@ -6967,6 +7291,7 @@
     }
   };
 
+  // Restore the user's player name across app restarts and app updates.
   // Load saved custom Player 1 name from localStorage
   state.p1CustomName = '';
   state.p2CustomName = '';
