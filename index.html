@@ -2375,20 +2375,24 @@ body > main.bottom-safe-clearance {padding-top:0 !important;}
   // =========================================================================
   // Arcade test features. Host is the only authority for online timeouts.
   const arcadeThemes = [
-    ['Midnight Navy','#090d16','#1e293b'],['Royal Purple','#120b2a','#38205b'],
-    ['Deep Teal','#061e24','#13505b'],['Burgundy','#210d1c','#562039'],
-    ['Forest','#081c17','#23523c'],['Slate Blue','#101b30','#34476d'],
+    ['Midnight Navy','#090d16','#1e293b'],
+    ['Royal Purple','#120b2a','#38205b'],
+    ['Deep Teal','#061e24','#13505b'],
+    ['Burgundy','#210d1c','#562039'],
+    ['Forest','#081c17','#23523c'],
+    ['Slate Blue','#101b30','#34476d'],
     ['Warm Charcoal','#171316','#423038'],
-    ['Peach Sorbet','#ffe0cf','#ffad93'],['Sky Blue','#d9f1ff','#88cfff'],
-    ['Mint Breeze','#ddfff1','#8fe9c3'],['Lavender Dream','#eee3ff','#c4a6fa'],
-    ['Sunny Lemon','#fff8c9','#ffe17e'],['Rose Pink','#ffe2ed','#ffaccd']
+    ['Soft Sky Blue','#83BCE5','#5D9BC8'],
+    ['Mint Green','#85C9B1','#4EAA8C'],
+    ['Soft Lavender','#B2A1D6','#8E79BD'],
+    ['Smoky Gray','#777985','#565965']
   ];
-  // Keep original theme IDs for saved preferences and online compatibility.
-  // Burgundy (3), Forest (4), Warm Charcoal (6), and Sunny Lemon (11) are excluded from selection.
-  const arcadeAvailableThemeIndices = [0,1,2,5,7,8,9,10,12];
+  // Only these eight backgrounds are selectable; other legacy indices remain reserved.
+  const arcadeAvailableThemeIndices = [0,1,2,5,7,8,9,10];
   let arcadeThemeIndex = 0, arcadePopupTimer = null, arcadeFinalTimer = null;
   function arcadeApplyTheme(index) {
-    arcadeThemeIndex = arcadeAvailableThemeIndices.includes(index) ? index : 0;
+    const compatibleIndex = ({13:7,14:8,15:9,16:10})[index] ?? index;
+    arcadeThemeIndex = arcadeAvailableThemeIndices.includes(compatibleIndex) ? compatibleIndex : 0;
     const theme = arcadeThemes[arcadeThemeIndex];
     document.documentElement.style.setProperty('--arcade-theme-base',theme[1]);
     document.documentElement.style.setProperty('--arcade-theme-accent',theme[2]);
@@ -2422,7 +2426,8 @@ body > main.bottom-safe-clearance {padding-top:0 !important;}
     const storedTheme = localStorage.getItem('dots3d_bg_theme');
     if (storedTheme !== null && /^\d+$/.test(storedTheme)) {
       const storedIndex = Number(storedTheme);
-      if (arcadeAvailableThemeIndices.includes(storedIndex)) initialArcadeTheme = storedIndex;
+      const migratedIndex = ({13:7,14:8,15:9,16:10})[storedIndex] ?? storedIndex;
+      if (arcadeAvailableThemeIndices.includes(migratedIndex)) initialArcadeTheme = migratedIndex;
     }
   } catch (e) {}
   arcadeApplyTheme(initialArcadeTheme);
